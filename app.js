@@ -21,6 +21,18 @@ const ICONS = {
   descartado: svgIcon('<path d="M18 6l-12 12"/><path d="M6 6l12 12"/>'),
 };
 
+// Juegos con este hype o más se destacan
+const HOT_THRESHOLD = 30;
+const FLAME = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 12c2 -2.96 0 -7 -1 -8c0 3.038 -1.773 4.741 -3 6c-1.226 1.26 -2 3.24 -2 5a6 6 0 1 0 12 0c0 -1.532 -1.056 -3.94 -2 -5c-1.786 3 -2.791 3 -4 2z"/></svg>';
+
+// Familia de plataforma -> clase de color para el chip
+function platClass(name) {
+  if (name.startsWith('PS')) return 'plat-ps';
+  if (name.startsWith('Xbox')) return 'plat-xbox';
+  if (name.startsWith('Switch')) return 'plat-nintendo';
+  return 'plat-pc';
+}
+
 // --- Estado de la aplicación ---
 const state = {
   date: new Date(),          // apunta a un día del mes mostrado
@@ -217,10 +229,12 @@ function cardHTML(game, platforms, humanLabel) {
     : `<div class="cover placeholder">sin carátula</div>`;
 
   const plats = (platforms ?? game.releases[0]?.platforms ?? [])
-    .map((p) => `<span class="chip">${p}</span>`).join('');
+    .map((p) => `<span class="chip ${platClass(p)}">${p}</span>`).join('');
 
-  const label = humanLabel ? `<div class="hype">${humanLabel}</div>` : '';
-  const cardClass = s && ESTADOS_POSITIVOS.includes(s) ? ` s-${s}` : '';
+  const label = humanLabel ? `<div class="date-approx">${humanLabel}</div>` : '';
+  const hot = game.hypes >= HOT_THRESHOLD;
+  const hypeBadge = `<div class="hype-badge${hot ? ' hot' : ''}">${FLAME} ${game.hypes}</div>`;
+  const cardClass = (s && ESTADOS_POSITIVOS.includes(s) ? ` s-${s}` : '') + (hot ? ' hot' : '');
 
   const btn = (action, on, extra = '') =>
     `<button data-id="${game.igdbId}" data-action="${action}" aria-label="${LABELS[action]}" title="${LABELS[action]}" class="${on ? 'on-' + action : ''} ${extra}">${ICONS[action]}</button>`;
@@ -231,7 +245,7 @@ function cardHTML(game, platforms, humanLabel) {
       <div class="name">${escapeHtml(game.name)}</div>
       <div class="platforms">${plats}</div>
       ${label}
-      <div class="hype">♦ ${game.hypes}</div>
+      ${hypeBadge}
       <div class="actions">
         ${btn('interesado', s === 'interesado')}
         ${btn('reservado', s === 'reservado')}
@@ -266,7 +280,10 @@ function renderGrid(games) {
   for (let day = 1; day <= daysInMonth; day++) {
     const list = byDay.get(day) ?? [];
     let mini = '';
-    for (const g of list.slice(0, 3)) mini += `<span>${escapeHtml(g.name)}</span>`;
+    for (const g of list.slice(0, 3)) {
+      if (g.hypes >= HOT_THRESHOLD) mini += `<span class="hot">${FLAME} ${escapeHtml(g.name)}</span>`;
+      else mini += `<span>${escapeHtml(g.name)}</span>`;
+    }
     const more = list.length > 3 ? `<div class="more">+${list.length - 3} más</div>` : '';
     html += `<div class="cell"><div class="num">${day}</div><div class="mini">${mini}</div>${more}</div>`;
   }
