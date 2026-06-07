@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calendario de lanzamientos</title>
+  <meta name="theme-color" content="#534ab7" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Lanzamientos" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- PANTALLA DE LOGIN -->
+  <section id="login" class="login hidden">
+    <form id="login-form" class="login-card">
+      <h1>Calendario de lanzamientos</h1>
+      <label>Email
+        <input type="email" id="email" required autocomplete="email" />
+      </label>
+      <label>Contraseña
+        <input type="password" id="password" required autocomplete="current-password" />
+      </label>
+      <button type="submit">Entrar</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </section>
+
+  <!-- APP -->
+  <section id="app" class="app hidden">
+    <header class="topbar">
+      <div class="topbar-row">
+        <span class="brand">Lanzamientos</span>
+        <div class="month-nav">
+          <button id="prev-month" aria-label="Mes anterior">‹</button>
+          <span id="month-label"></span>
+          <button id="next-month" aria-label="Mes siguiente">›</button>
+        </div>
+        <button id="logout" class="ghost" aria-label="Cerrar sesión">Salir</button>
+      </div>
+      <div class="topbar-row">
+        <div class="toggle" role="group" aria-label="Tipo de vista">
+          <button data-view="agenda" class="active">Agenda</button>
+          <button data-view="grid">Mes</button>
+        </div>
+        <div class="toggle" role="group" aria-label="Alcance">
+          <button data-scope="general" class="active">General</button>
+          <button data-scope="mine">Solo míos</button>
+        </div>
+        <div class="slider">
+          <label for="hype">Relevancia</label>
+          <input type="range" id="hype" min="0" max="500" step="1" value="0" />
+          <span id="hype-out">todo</span>
+        </div>
+      </div>
+    </header>
+
+    <main id="content" class="content"></main>
+  </section>
+
+  <!-- Aviso de "deshacer" tras descartar -->
+  <div id="undo" class="undo hidden">
+    <span id="undo-text"></span>
+    <button id="undo-btn">Deshacer</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
