@@ -17,6 +17,7 @@ create table public.games_cache (
   platforms      text[],             -- ej. {'PC','PS5','Xbox Series'}
   hypes          integer default 0,  -- para el filtro de relevancia
   summary        text,
+  url            text,               -- ficha del juego en igdb.com
   updated_at     timestamptz not null default now()
 );
 

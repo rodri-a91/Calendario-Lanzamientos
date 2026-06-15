@@ -177,17 +177,27 @@ function render() {
   content.innerHTML = state.view === 'agenda' ? renderAgenda(games) : renderGrid(games);
 }
 
-// Una "aparición" = un juego en una fecha concreta
+// Una "aparición" por juego al mes: lo colocamos en su fecha principal
+// y juntamos todas sus plataformas en una sola tarjeta.
 function expandReleases(games) {
-  const exact = [];   // { dateISO, day, game }
-  const approx = [];  // { game, human }
+  const exact = [];
+  const approx = [];
   for (const g of games) {
-    for (const rel of g.releases) {
-      if (rel.precise && rel.date) {
-        exact.push({ dateISO: rel.date, game: g, platforms: rel.platforms });
-      } else {
-        approx.push({ game: g, human: rel.human });
-      }
+    const platforms = [...new Set(g.releases.flatMap((r) => r.platforms))];
+    const precisos = g.releases.filter((r) => r.precise && r.date);
+    if (precisos.length) {
+      // Fecha representativa: la que sale en más plataformas; si empatan,
+      // la más tardía (suele ser la edición estándar, no el acceso anticipado).
+      const rep = precisos.reduce((best, r) => {
+        if (!best) return r;
+        if (r.platforms.length !== best.platforms.length)
+          return r.platforms.length > best.platforms.length ? r : best;
+        return r.date > best.date ? r : best;
+      }, null);
+      exact.push({ dateISO: rep.date, game: g, platforms });
+    } else {
+      const human = g.releases.find((r) => r.human)?.human ?? 'Sin fecha';
+      approx.push({ game: g, human, platforms });
     }
   }
   return { exact, approx };
@@ -216,7 +226,7 @@ function renderAgenda(games) {
 
   if (approx.length) {
     html += `<div class="day-head">Sin fecha exacta</div><div class="cards">`;
-    for (const r of approx) html += cardHTML(r.game, null, r.human);
+    for (const r of approx) html += cardHTML(r.game, r.platforms, r.human);
     html += '</div>';
   }
   return html;
@@ -224,9 +234,12 @@ function renderAgenda(games) {
 
 function cardHTML(game, platforms, humanLabel) {
   const s = statusOf(game.igdbId);
-  const cover = game.coverImageId
+  const coverInner = game.coverImageId
     ? `<img class="cover" loading="lazy" src="https://images.igdb.com/igdb/image/upload/t_cover_big/${game.coverImageId}.jpg" alt="">`
     : `<div class="cover placeholder">sin carátula</div>`;
+  const cover = game.url
+    ? `<a class="cover-link" href="${game.url}" target="_blank" rel="noopener noreferrer" title="Ver ficha en IGDB">${coverInner}</a>`
+    : coverInner;
 
   const plats = (platforms ?? game.releases[0]?.platforms ?? [])
     .map((p) => `<span class="chip ${platClass(p)}">${p}</span>`).join('');
