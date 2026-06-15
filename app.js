@@ -161,8 +161,7 @@ function visibleGames() {
 
 function render() {
   // Etiquetas de la cabecera
-  document.getElementById('month-label').textContent =
-    `${MESES[state.date.getMonth()]} ${state.date.getFullYear()}`;
+  document.getElementById('month-picker').value = monthKey(state.date);
   document.getElementById('hype-out').textContent =
     state.minHypes === 0 ? 'todo' : `hype > ${state.minHypes}`;
 
@@ -390,6 +389,20 @@ document.getElementById('prev-month').addEventListener('click', () => {
 });
 document.getElementById('next-month').addEventListener('click', () => {
   state.date = new Date(state.date.getFullYear(), state.date.getMonth() + 1, 1);
+  loadAll();
+});
+
+// Salto directo a cualquier mes con el selector
+document.getElementById('month-picker').addEventListener('change', (e) => {
+  if (!e.target.value) return;
+  const [y, m] = e.target.value.split('-').map(Number);
+  state.date = new Date(y, m - 1, 1);
+  loadAll();
+});
+
+// Volver al mes actual
+document.getElementById('today').addEventListener('click', () => {
+  state.date = new Date();
   loadAll();
 });
 
