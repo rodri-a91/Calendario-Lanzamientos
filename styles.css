@@ -43,7 +43,7 @@ body {
 
 /* ---------- TOPBAR ---------- */
 .app { max-width: 1000px; margin: 0 auto; padding: 1rem; }
-.topbar { display: flex; flex-direction: column; gap: 12px; margin-bottom: 1.25rem; }
+.topbar { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; z-index: 10; background: var(--bg); padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .topbar-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .brand { font-size: 18px; font-weight: 500; }
 .month-nav { display: flex; align-items: center; gap: 10px; }

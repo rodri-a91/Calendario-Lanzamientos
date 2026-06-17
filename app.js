@@ -44,6 +44,7 @@ let currentUserId = null;
 let gamesById = new Map();    // igdbId -> juego (de la API)
 let trackedMap = new Map();   // igdbId -> { status }
 let undoTimer = null;
+let pendingInitialJump = true; // saltar al próximo lanzamiento solo al abrir
 
 // ============================================================
 //  AUTENTICACIÓN
@@ -159,11 +160,33 @@ function visibleGames() {
 //  RENDER
 // ============================================================
 
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Desplaza la página hasta la primera cabecera de día igual o posterior a hoy.
+// Usa la altura real de la barra para no esconder el día tras ella.
+function scrollToNextRelease() {
+  const today = todayISO();
+  let target = null;
+  for (const h of document.querySelectorAll('#content .day-head[data-date]')) {
+    if (h.dataset.date >= today) { target = h; break; }
+  }
+  if (!target) return; // no hay nada próximo este mes: nos quedamos arriba
+  const headerH = document.querySelector('.topbar')?.offsetHeight ?? 0;
+  const y = target.getBoundingClientRect().top + window.scrollY - headerH - 8;
+  window.scrollTo({ top: y, behavior: 'smooth' });
+}
+
 function render() {
   // Etiquetas de la cabecera
   document.getElementById('month-picker').value = monthKey(state.date);
   document.getElementById('hype-out').textContent =
     state.minHypes === 0 ? 'todo' : `hype > ${state.minHypes}`;
+
+  const firstRender = pendingInitialJump;
+  pendingInitialJump = false;
 
   const games = visibleGames();
   const content = document.getElementById('content');
@@ -174,6 +197,9 @@ function render() {
   }
 
   content.innerHTML = state.view === 'agenda' ? renderAgenda(games) : renderGrid(games);
+
+  // Solo al abrir la app: saltar al próximo día con lanzamientos
+  if (firstRender && state.view === 'agenda') scrollToNextRelease();
 }
 
 // Una "aparición" por juego al mes: lo colocamos en su fecha principal
@@ -217,7 +243,7 @@ function renderAgenda(games) {
   for (const iso of fechas) {
     const d = new Date(iso + 'T00:00:00');
     const dow = DOW[(d.getDay() + 6) % 7];
-    html += `<div class="day-head">${dow} · ${d.getDate()} ${MESES[d.getMonth()]}</div>`;
+    html += `<div class="day-head" data-date="${iso}">${dow} · ${d.getDate()} ${MESES[d.getMonth()]}</div>`;
     html += '<div class="cards">';
     for (const r of byDate.get(iso)) html += cardHTML(r.game, r.platforms);
     html += '</div>';
