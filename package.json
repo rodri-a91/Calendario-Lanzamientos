@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.0"
+    "@supabase/supabase-js": "2.117.2"
   }
 }

@@ -46,6 +46,13 @@ let trackedMap = new Map();   // igdbId -> { status }
 let undoTimer = null;
 let pendingInitialJump = true; // saltar al próximo lanzamiento solo al abrir
 let loadSeq = 0;               // descarta respuestas de meses que ya no se muestran
+let trackedLoaded = false;     // tus estados se cargan una vez por sesión, no por mes
+let renderQueued = false;
+
+// Rango de meses que acepta la API (ver MAX_YEARS_AWAY en api/calendar.js)
+const YEARS_AWAY = 3;
+const MIN_MONTH = new Date(new Date().getFullYear() - YEARS_AWAY, 0, 1);
+const MAX_MONTH = new Date(new Date().getFullYear() + YEARS_AWAY, 11, 1);
 
 // ============================================================
 //  AUTENTICACIÓN
@@ -90,6 +97,7 @@ db.auth.onAuthStateChange((event, session) => {
     currentUserId = null;
     gamesById = new Map();
     trackedMap = new Map();
+    trackedLoaded = false;
     show('login');
   }
 });
@@ -116,10 +124,16 @@ async function loadAll() {
   // Si el usuario cambia de mes antes de que llegue la respuesta,
   // la petición antigua queda obsoleta y no debe pisar a la nueva.
   const seq = ++loadSeq;
+  updateMonthNav();
   const content = document.getElementById('content');
   content.innerHTML = '<p class="empty-msg">Cargando…</p>';
   try {
-    const [calendar] = await Promise.all([fetchCalendar(monthKey(state.date)), loadTracked()]);
+    // trackedMap ya se mantiene al día con cada cambio local: solo hace
+    // falta pedirlo a Supabase la primera vez de la sesión.
+    const [calendar] = await Promise.all([
+      fetchCalendar(monthKey(state.date)),
+      trackedLoaded ? null : loadTracked(),
+    ]);
     if (seq !== loadSeq) return;
 
     gamesById = new Map();
@@ -145,6 +159,7 @@ async function loadTracked() {
   if (error) throw error;
   trackedMap = new Map();
   for (const row of data) trackedMap.set(row.igdb_game_id, { status: row.status });
+  trackedLoaded = true;
 }
 
 // ============================================================
@@ -454,21 +469,35 @@ function showToast(text, onUndo) {
 //  CONTROLES DE LA CABECERA
 // ============================================================
 
-document.getElementById('prev-month').addEventListener('click', () => {
-  state.date = new Date(state.date.getFullYear(), state.date.getMonth() - 1, 1);
+// Cambia de mes sin salirse del rango que acepta la API.
+function goToMonth(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), 1);
+  state.date = d < MIN_MONTH ? MIN_MONTH : d > MAX_MONTH ? MAX_MONTH : d;
   loadAll();
+}
+
+// Desactiva las flechas en los extremos del rango.
+function updateMonthNav() {
+  const y = state.date.getFullYear();
+  const m = state.date.getMonth();
+  document.getElementById('prev-month').disabled =
+    y === MIN_MONTH.getFullYear() && m === MIN_MONTH.getMonth();
+  document.getElementById('next-month').disabled =
+    y === MAX_MONTH.getFullYear() && m === MAX_MONTH.getMonth();
+}
+
+document.getElementById('prev-month').addEventListener('click', () => {
+  goToMonth(new Date(state.date.getFullYear(), state.date.getMonth() - 1, 1));
 });
 document.getElementById('next-month').addEventListener('click', () => {
-  state.date = new Date(state.date.getFullYear(), state.date.getMonth() + 1, 1);
-  loadAll();
+  goToMonth(new Date(state.date.getFullYear(), state.date.getMonth() + 1, 1));
 });
 
 // Salto directo a cualquier mes con el selector
 document.getElementById('month-picker').addEventListener('change', (e) => {
   if (!e.target.value) return;
   const [y, m] = e.target.value.split('-').map(Number);
-  state.date = new Date(y, m - 1, 1);
-  loadAll();
+  goToMonth(new Date(y, m - 1, 1));
 });
 
 // Volver al mes actual
@@ -495,15 +524,24 @@ document.querySelectorAll('[data-scope]').forEach((b) => {
 
 document.getElementById('hype').addEventListener('input', (e) => {
   state.minHypes = Number(e.target.value);
-  render(); // filtrado instantáneo, sin tocar la red
+  scheduleRender(); // filtrado sin tocar la red, como mucho un render por frame
 });
 
-// El selector solo ofrece los años que acepta la API (±3 años, ver api/calendar.js)
+// Agrupa varios renders seguidos (p. ej. al arrastrar el deslizador) en uno por frame.
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    render();
+  });
+}
+
+// El selector solo ofrece los meses que acepta la API
 {
-  const y = new Date().getFullYear();
   const picker = document.getElementById('month-picker');
-  picker.min = `${y - 3}-01`;
-  picker.max = `${y + 3}-12`;
+  picker.min = monthKey(MIN_MONTH);
+  picker.max = monthKey(MAX_MONTH);
 }
 
 // Arrancar
