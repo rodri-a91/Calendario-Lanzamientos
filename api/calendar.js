@@ -1,5 +1,7 @@
 import { getCalendar } from '../lib/igdb.js';
 
+const MAX_YEARS_AWAY = 3;
+
 // Endpoint: GET /api/calendar?month=YYYY-MM
 // Devuelve el calendario general del mes (agrupado por juego).
 // Todo lo personal (tus estados, el deslizador de hype, los descartados)
@@ -14,6 +16,14 @@ export default async function handler(req, res) {
   // Validación estricta del parámetro (YYYY-MM, mes 01-12).
   if (!month || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
     return res.status(400).json({ error: 'Parámetro "month" inválido (usa YYYY-MM).' });
+  }
+
+  // El endpoint es público: acotamos los años para que nadie pueda
+  // forzar descargas a IGDB (y filas en caché) de meses absurdos.
+  const year = Number(month.slice(0, 4));
+  const currentYear = new Date().getUTCFullYear();
+  if (Math.abs(year - currentYear) > MAX_YEARS_AWAY) {
+    return res.status(400).json({ error: `Solo se admiten meses a ±${MAX_YEARS_AWAY} años del actual.` });
   }
 
   try {

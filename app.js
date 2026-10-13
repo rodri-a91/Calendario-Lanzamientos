@@ -45,6 +45,7 @@ let gamesById = new Map();    // igdbId -> juego (de la API)
 let trackedMap = new Map();   // igdbId -> { status }
 let undoTimer = null;
 let pendingInitialJump = true; // saltar al próximo lanzamiento solo al abrir
+let loadSeq = 0;               // descarta respuestas de meses que ya no se muestran
 
 // ============================================================
 //  AUTENTICACIÓN
@@ -82,6 +83,17 @@ document.getElementById('logout').addEventListener('click', async () => {
   show('login');
 });
 
+// Si la sesión se cierra por otra vía (otra pestaña, refresh token caducado
+// o revocado), volvemos al login en vez de fallar con errores de RLS.
+db.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT' || (!session && currentUserId)) {
+    currentUserId = null;
+    gamesById = new Map();
+    trackedMap = new Map();
+    show('login');
+  }
+});
+
 function show(which) {
   document.getElementById('login').classList.toggle('hidden', which !== 'login');
   document.getElementById('app').classList.toggle('hidden', which !== 'app');
@@ -101,16 +113,21 @@ function monthKey(date) {
 }
 
 async function loadAll() {
+  // Si el usuario cambia de mes antes de que llegue la respuesta,
+  // la petición antigua queda obsoleta y no debe pisar a la nueva.
+  const seq = ++loadSeq;
   const content = document.getElementById('content');
   content.innerHTML = '<p class="empty-msg">Cargando…</p>';
   try {
     const [calendar] = await Promise.all([fetchCalendar(monthKey(state.date)), loadTracked()]);
+    if (seq !== loadSeq) return;
 
     gamesById = new Map();
     for (const g of calendar.games) gamesById.set(g.igdbId, g);
 
     render();
   } catch (err) {
+    if (seq !== loadSeq) return;
     console.error(err);
     content.innerHTML = '<p class="empty-msg">No se pudo cargar el calendario.</p>';
   }
@@ -259,17 +276,19 @@ function renderAgenda(games) {
 
 function cardHTML(game, platforms, humanLabel) {
   const s = statusOf(game.igdbId);
+  // Todo lo que viene de IGDB se escapa: es una fuente externa editable.
   const coverInner = game.coverImageId
-    ? `<img class="cover" loading="lazy" src="https://images.igdb.com/igdb/image/upload/t_cover_big/${game.coverImageId}.jpg" alt="">`
+    ? `<img class="cover" loading="lazy" src="https://images.igdb.com/igdb/image/upload/t_cover_big/${encodeURIComponent(game.coverImageId)}.jpg" alt="">`
     : `<div class="cover placeholder">sin carátula</div>`;
-  const cover = game.url
-    ? `<a class="cover-link" href="${game.url}" target="_blank" rel="noopener noreferrer" title="Ver ficha en IGDB">${coverInner}</a>`
+  const url = safeUrl(game.url);
+  const cover = url
+    ? `<a class="cover-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="Ver ficha en IGDB">${coverInner}</a>`
     : coverInner;
 
   const plats = (platforms ?? game.releases[0]?.platforms ?? [])
-    .map((p) => `<span class="chip ${platClass(p)}">${p}</span>`).join('');
+    .map((p) => `<span class="chip ${platClass(p)}">${escapeHtml(p)}</span>`).join('');
 
-  const label = humanLabel ? `<div class="date-approx">${humanLabel}</div>` : '';
+  const label = humanLabel ? `<div class="date-approx">${escapeHtml(humanLabel)}</div>` : '';
   const hot = game.hypes >= HOT_THRESHOLD;
   const hypeBadge = `<div class="hype-badge${hot ? ' hot' : ''}">${FLAME} ${game.hypes}</div>`;
   const cardClass = (s && ESTADOS_POSITIVOS.includes(s) ? ` s-${s}` : '') + (hot ? ' hot' : '');
@@ -338,6 +357,11 @@ function escapeHtml(str) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Solo aceptamos enlaces http(s): evita cosas como "javascript:..." en el href.
+function safeUrl(url) {
+  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
+}
+
 // ============================================================
 //  MUTACIONES (clic en los botones de estado)
 // ============================================================
@@ -351,23 +375,47 @@ document.getElementById('content').addEventListener('click', async (e) => {
   const game = gamesById.get(igdbId);
   if (!game) return;
 
-  const current = statusOf(igdbId);
+  const prev = statusOf(igdbId);
 
   if (action === 'descartado') {
-    await setStatus(game, 'descartado');
-    showUndo(game);
-  } else if (current === action) {
-    // Clic en el estado ya activo => lo quito
-    await removeStatus(game);
+    const ok = await changeStatus(game, 'descartado');
+    // Deshacer devuelve el juego al estado que tenía (p. ej. 'reservado'),
+    // no solo lo "des-descarta".
+    if (ok) showToast(`"${game.name}" descartado`, () => changeStatus(game, prev));
   } else {
-    await setStatus(game, action);
+    // Clic en el estado ya activo => lo quito
+    await changeStatus(game, prev === action ? null : action);
   }
-  render();
 });
 
-async function setStatus(game, status) {
-  trackedMap.set(game.igdbId, { status }); // optimista
-  const { error } = await db.from('tracked_games').upsert({
+// Cambia el estado de un juego (null = sin estado). Es optimista de verdad:
+// pinta al instante y guarda después. Si el guardado falla, vuelve atrás
+// y avisa. Devuelve true si se guardó.
+async function changeStatus(game, status) {
+  const prev = statusOf(game.igdbId);
+  setLocalStatus(game.igdbId, status);
+  render();
+
+  const { error } = status ? await saveStatus(game, status) : await deleteStatus(game);
+  if (!error) return true;
+
+  console.error('Error al guardar estado:', error);
+  // Solo revertimos si nadie ha vuelto a cambiar el juego mientras tanto.
+  if (statusOf(game.igdbId) === status) {
+    setLocalStatus(game.igdbId, prev);
+    render();
+  }
+  showToast('No se pudo guardar el cambio. Inténtalo de nuevo.');
+  return false;
+}
+
+function setLocalStatus(igdbId, status) {
+  if (status) trackedMap.set(igdbId, { status });
+  else trackedMap.delete(igdbId);
+}
+
+function saveStatus(game, status) {
+  return db.from('tracked_games').upsert({
     user_id: currentUserId,
     igdb_game_id: game.igdbId,
     status,
@@ -375,34 +423,31 @@ async function setStatus(game, status) {
     cover_image_id: game.coverImageId,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id,igdb_game_id' });
-  if (error) console.error('Error al guardar estado:', error);
 }
 
-async function removeStatus(game) {
-  trackedMap.delete(game.igdbId);
-  const { error } = await db.from('tracked_games')
+function deleteStatus(game) {
+  return db.from('tracked_games')
     .delete()
     .eq('user_id', currentUserId)
     .eq('igdb_game_id', game.igdbId);
-  if (error) console.error('Error al quitar estado:', error);
 }
 
 // ============================================================
-//  DESHACER (tras descartar)
+//  AVISOS (deshacer tras descartar, errores al guardar)
 // ============================================================
 
-function showUndo(game) {
-  const undo = document.getElementById('undo');
-  document.getElementById('undo-text').textContent = `"${game.name}" descartado`;
-  undo.classList.remove('hidden');
+// Muestra un aviso temporal. Si se pasa onUndo, aparece el botón "Deshacer".
+function showToast(text, onUndo) {
+  const toast = document.getElementById('undo');
+  const btn = document.getElementById('undo-btn');
+  document.getElementById('undo-text').textContent = text;
+  btn.classList.toggle('hidden', !onUndo);
+  btn.onclick = onUndo
+    ? () => { toast.classList.add('hidden'); onUndo(); }
+    : null;
+  toast.classList.remove('hidden');
   clearTimeout(undoTimer);
-  undoTimer = setTimeout(() => undo.classList.add('hidden'), 6000);
-
-  document.getElementById('undo-btn').onclick = async () => {
-    await removeStatus(game);  // borrar la fila 'descartado' lo restaura
-    undo.classList.add('hidden');
-    render();
-  };
+  undoTimer = setTimeout(() => toast.classList.add('hidden'), 6000);
 }
 
 // ============================================================
@@ -452,6 +497,14 @@ document.getElementById('hype').addEventListener('input', (e) => {
   state.minHypes = Number(e.target.value);
   render(); // filtrado instantáneo, sin tocar la red
 });
+
+// El selector solo ofrece los años que acepta la API (±3 años, ver api/calendar.js)
+{
+  const y = new Date().getFullYear();
+  const picker = document.getElementById('month-picker');
+  picker.min = `${y - 3}-01`;
+  picker.max = `${y + 3}-12`;
+}
 
 // Arrancar
 init();
