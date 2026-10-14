@@ -464,11 +464,21 @@ document.getElementById('next-month').addEventListener('click', () => {
 });
 
 // Salto directo a cualquier mes con el selector
-document.getElementById('month-picker').addEventListener('change', (e) => {
-  if (!e.target.value) return;
-  const [y, m] = e.target.value.split('-').map(Number);
-  goToMonth(new Date(y, m - 1, 1));
-});
+// En iOS la rueda del selector dispara "change" con cada giro, así que allí
+// esperamos a que se cierre (al pulsar "Aceptar" el campo pierde el foco).
+// En el resto, "change" solo llega al confirmar.
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.platform) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
+{
+  const picker = document.getElementById('month-picker');
+  picker.addEventListener(IS_IOS ? 'blur' : 'change', () => {
+    const current = monthKey(state.date);
+    if (!picker.value) { picker.value = current; return; } // "Restablecer" lo vacía
+    if (picker.value === current) return;
+    const [y, m] = picker.value.split('-').map(Number);
+    goToMonth(new Date(y, m - 1, 1));
+  });
+}
 
 // Volver al mes actual y saltar al próximo lanzamiento
 document.getElementById('today').addEventListener('click', () => {
