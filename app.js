@@ -252,15 +252,21 @@ function todayISO() {
 // Desplaza la página hasta la primera cabecera de día igual o posterior a hoy.
 // Usa la altura real de la barra para no esconder el día tras ella.
 function scrollToNextRelease() {
-  const today = todayISO();
+  scrollToDay(todayISO());
+}
+
+// Desplaza la Agenda hasta el primer día con lanzamientos igual o posterior
+// a iso. Medimos la <section> del día y no su cabecera, que al ser sticky
+// puede estar "pegada" arriba y dar una posición engañosa.
+function scrollToDay(iso, behavior = 'smooth') {
   let target = null;
   for (const h of document.querySelectorAll('#content .day-head[data-date]')) {
-    if (h.dataset.date >= today) { target = h; break; }
+    if (h.dataset.date >= iso) { target = h.closest('.day') ?? h; break; }
   }
-  if (!target) return; // no hay nada próximo este mes: nos quedamos arriba
+  if (!target) return; // no hay nada desde ese día: nos quedamos donde estamos
   const headerH = document.querySelector('.topbar')?.offsetHeight ?? 0;
   const y = target.getBoundingClientRect().top + window.scrollY - headerH - 8;
-  window.scrollTo({ top: y, behavior: 'smooth' });
+  window.scrollTo({ top: y, behavior });
 }
 
 function render() {
@@ -454,7 +460,18 @@ function renderGrid(games) {
     }
     const more = list.length > 3 ? `<div class="more">+${list.length - 3} más</div>` : '';
     const today = day === todayDay ? ' today" aria-current="date' : '';
-    html += `<div class="cell${today}"><div class="num">${day}</div><div class="mini">${mini}</div>${more}</div>`;
+    if (!list.length) {
+      html += `<div class="cell${today}"><div class="num">${day}</div></div>`;
+      continue;
+    }
+    // Los días con juegos son botones: llevan a ese día en la Agenda.
+    // En móvil no caben nombres, así que se ve solo el número de juegos.
+    const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const hot = list.some((g) => g.hypes >= HOT_THRESHOLD);
+    const label = `${day} de ${MESES[month]}: ${list.length} ${list.length === 1 ? 'juego' : 'juegos'}`;
+    html += `<button type="button" class="cell has-games${today}" data-goto="${iso}" aria-label="${label}">`
+      + `<div class="num">${day}</div><div class="mini">${mini}</div>${more}`
+      + `<div class="count${hot ? ' hot' : ''}">${hot ? FLAME : ''}${list.length}</div></button>`;
   }
   html += '</div>';
 
@@ -479,6 +496,16 @@ function safeUrl(url) {
 // ============================================================
 
 document.getElementById('content').addEventListener('click', async (e) => {
+  // Día de la vista Mes -> ese día en la Agenda
+  const cell = e.target.closest('[data-goto]');
+  if (cell) {
+    state.view = 'agenda';
+    setPressed('[data-view]', document.querySelector('[data-view="agenda"]'));
+    render();
+    scrollToDay(cell.dataset.goto, 'auto');
+    return;
+  }
+
   const btn = e.target.closest('button[data-action]');
   if (!btn) return;
 
