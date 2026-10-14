@@ -264,6 +264,8 @@ function scrollToDay(iso, behavior = 'smooth') {
     if (h.dataset.date >= iso) { target = h.closest('.day') ?? h; break; }
   }
   if (!target) return; // no hay nada desde ese día: nos quedamos donde estamos
+  // La barra se queda visible durante el salto, así su altura cuenta.
+  showTopbar(800);
   const headerH = document.querySelector('.topbar')?.offsetHeight ?? 0;
   const y = target.getBoundingClientRect().top + window.scrollY - headerH - 8;
   window.scrollTo({ top: y, behavior });
@@ -634,9 +636,16 @@ const IS_IOS = /iP(hone|ad|od)/.test(navigator.platform) ||
   });
 }
 
-// Volver al mes actual y saltar al próximo lanzamiento
+// Volver al mes actual y saltar al próximo lanzamiento. Si ya está
+// cargado, basta con desplazarse: no hace falta volver a pedirlo.
 document.getElementById('today').addEventListener('click', () => {
-  state.date = new Date();
+  const now = new Date();
+  if (monthKey(state.date) === monthKey(now) && loadedMonth === monthKey(now)) {
+    if (state.view === 'agenda') scrollToNextRelease();
+    else window.scrollTo({ top: 0, behavior: 'smooth' }); // la vista Mes cabe casi entera
+    return;
+  }
+  state.date = now;
   loadAll({ jump: true });
 });
 
@@ -698,6 +707,44 @@ document.querySelectorAll('[data-scope]').forEach((b) => {
   new ResizeObserver(() => {
     document.documentElement.style.setProperty('--topbar-h', `${topbar.offsetHeight}px`);
   }).observe(topbar);
+}
+
+// Móvil: la barra se esconde al bajar y vuelve al subir (CSS:
+// body.topbar-hidden). Cerca del principio, o con el foco dentro (p. ej.
+// el selector de mes abierto), se queda visible.
+let topbarHoldUntil = 0;
+
+// Muestra la barra y no deja esconderla durante holdMs (saltos programados).
+function showTopbar(holdMs = 0) {
+  document.body.classList.remove('topbar-hidden');
+  topbarHoldUntil = Date.now() + holdMs;
+}
+
+{
+  const topbar = document.querySelector('.topbar');
+  const mobile = matchMedia('(max-width: 600px)');
+  let lastY = window.scrollY;
+  let ticking = false;
+
+  const update = () => {
+    ticking = false;
+    const y = window.scrollY;
+    const delta = y - lastY;
+    if (!mobile.matches || y < topbar.offsetHeight || topbar.contains(document.activeElement)) {
+      document.body.classList.remove('topbar-hidden');
+    } else if (delta > 6) {
+      if (Date.now() >= topbarHoldUntil) document.body.classList.add('topbar-hidden');
+    } else if (delta < -6) {
+      document.body.classList.remove('topbar-hidden');
+    } else {
+      return; // movimiento pequeño (rebote de iOS): no tocamos lastY
+    }
+    lastY = y;
+  };
+
+  window.addEventListener('scroll', () => {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
 }
 
 // Arrancar

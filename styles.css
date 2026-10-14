@@ -129,6 +129,12 @@ button:focus-visible, .cover-link:focus-visible, input:focus-visible { outline: 
   .brand { display: none; }
   .month-nav { order: 3; width: 100%; }
   .month-picker { flex: 1; min-width: 0; }
+  /* Al bajar, la barra se esconde (app.js pone .topbar-hidden) y las
+     cabeceras de día suben a ocupar su sitio; al subir, vuelve. */
+  .topbar { transition: transform .2s ease; }
+  body.topbar-hidden .topbar { transform: translateY(-100%); }
+  .day-head { transition: top .2s ease; }
+  body.topbar-hidden .day-head { top: 0; }
 }
 
 /* Pantallas táctiles: objetivos de ~44px para el dedo */
