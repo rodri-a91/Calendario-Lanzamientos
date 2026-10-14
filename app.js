@@ -44,7 +44,6 @@ let currentUserId = null;
 let gamesById = new Map();    // igdbId -> juego (de la API)
 let trackedMap = new Map();   // igdbId -> { status }
 let undoTimer = null;
-let pendingInitialJump = true; // saltar al próximo lanzamiento solo al abrir
 let loadSeq = 0;               // descarta respuestas de meses que ya no se muestran
 let trackedLoaded = false;     // tus estados se cargan una vez por sesión, no por mes
 let renderQueued = false;
@@ -109,7 +108,7 @@ function show(which) {
 
 function showApp() {
   show('app');
-  loadAll();
+  loadAll({ jump: true }); // al abrir, saltar al próximo lanzamiento
 }
 
 // ============================================================
@@ -120,7 +119,7 @@ function monthKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
-async function loadAll() {
+async function loadAll({ jump = false } = {}) {
   // Si el usuario cambia de mes antes de que llegue la respuesta,
   // la petición antigua queda obsoleta y no debe pisar a la nueva.
   const seq = ++loadSeq;
@@ -140,6 +139,7 @@ async function loadAll() {
     for (const g of calendar.games) gamesById.set(g.igdbId, g);
 
     render();
+    if (jump && state.view === 'agenda') scrollToNextRelease();
   } catch (err) {
     if (seq !== loadSeq) return;
     console.error(err);
@@ -215,10 +215,7 @@ function render() {
   // Etiquetas de la cabecera
   document.getElementById('month-picker').value = monthKey(state.date);
   document.getElementById('hype-out').textContent =
-    state.minHypes === 0 ? 'todo' : `hype > ${state.minHypes}`;
-
-  const firstRender = pendingInitialJump;
-  pendingInitialJump = false;
+    state.minHypes === 0 ? 'todo' : `hype ≥ ${state.minHypes}`;
 
   const games = visibleGames();
   const content = document.getElementById('content');
@@ -229,35 +226,6 @@ function render() {
   }
 
   content.innerHTML = state.view === 'agenda' ? renderAgenda(games) : renderGrid(games);
-
-  // Solo al abrir la app: saltar al próximo día con lanzamientos
-  if (firstRender && state.view === 'agenda') scrollToNextRelease();
-}
-
-// Una "aparición" por juego al mes: lo colocamos en su fecha principal
-// y juntamos todas sus plataformas en una sola tarjeta.
-function expandReleases(games) {
-  const exact = [];
-  const approx = [];
-  for (const g of games) {
-    const platforms = [...new Set(g.releases.flatMap((r) => r.platforms))];
-    const precisos = g.releases.filter((r) => r.precise && r.date);
-    if (precisos.length) {
-      // Fecha representativa: la que sale en más plataformas; si empatan,
-      // la más tardía (suele ser la edición estándar, no el acceso anticipado).
-      const rep = precisos.reduce((best, r) => {
-        if (!best) return r;
-        if (r.platforms.length !== best.platforms.length)
-          return r.platforms.length > best.platforms.length ? r : best;
-        return r.date > best.date ? r : best;
-      }, null);
-      exact.push({ dateISO: rep.date, game: g, platforms });
-    } else {
-      const human = g.releases.find((r) => r.human)?.human ?? 'Sin fecha';
-      approx.push({ game: g, human, platforms });
-    }
-  }
-  return { exact, approx };
 }
 
 function renderAgenda(games) {
@@ -500,10 +468,10 @@ document.getElementById('month-picker').addEventListener('change', (e) => {
   goToMonth(new Date(y, m - 1, 1));
 });
 
-// Volver al mes actual
+// Volver al mes actual y saltar al próximo lanzamiento
 document.getElementById('today').addEventListener('click', () => {
   state.date = new Date();
-  loadAll();
+  loadAll({ jump: true });
 });
 
 document.querySelectorAll('[data-view]').forEach((b) => {

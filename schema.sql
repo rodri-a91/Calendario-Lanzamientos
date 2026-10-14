@@ -29,9 +29,9 @@ create table public.release_dates (
                     references public.games_cache(igdb_game_id)
                     on delete cascade,
   release_date    date,
-  date_precision  text,   -- exacta / mes / trimestre / año / tbd
+  date_precision  text,   -- 'exacta' (día concreto) / 'aproximada' (Q4 2026, 2026, TBD…)
   platform        text,
-  region          text,
+  region          text,   -- id de región de IGDB: 1 Europa, 2 Norteamérica, 5 Japón, 8 mundial…
   human           text    -- texto ya formateado por IGDB ("Q4 2026")
 );
 create index release_dates_date_idx on public.release_dates (release_date);
