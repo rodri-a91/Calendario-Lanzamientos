@@ -7,11 +7,11 @@ import vm from 'node:vm';
 // lo ejecutamos en un contexto aislado y recogemos sus funciones.
 const ctx = {};
 vm.runInNewContext(readFileSync(new URL('../releases.js', import.meta.url), 'utf8'), ctx);
-const { expandReleases } = ctx;
+const { expandReleases, listGroups } = ctx;
 
 const rel = (date, { regions = [], platforms = ['PS5'], precise = date != null, human } = {}) =>
   ({ date, human: human ?? date ?? 'Q4 2026', precise, platforms, regions });
-const game = (igdbId, releases) => ({ igdbId, releases });
+const game = (igdbId, releases, name = `Juego ${igdbId}`) => ({ igdbId, name, releases });
 
 // Resumen comparable: [id, fecha] para exactas, [id, texto] para aproximadas.
 // JSON evita problemas al comparar arrays creados en otro contexto de vm.
@@ -88,4 +88,56 @@ test('sin ninguna fecha exacta: va a aproximadas con su texto o "Sin fecha"', ()
 test('una fecha marcada exacta pero sin día no cuenta como exacta', () => {
   const out = summary([game(1, [rel(null, { precise: true, human: 'TBD' })])]);
   assert.deepEqual(out.approx, [[1, 'TBD', ['PS5']]]);
+});
+
+// --- listGroups (Mi lista) ---
+
+const TODAY = '2026-10-14';
+const statuses = (map) => (id) => map[id] ?? null;
+
+// Resumen por grupo: [id, fecha o texto]
+function groupsSummary(games, map) {
+  const g = listGroups(games, statuses(map), TODAY);
+  const pick = (list) => list.map((e) => [e.game.igdbId, e.dateISO ?? e.label]);
+  return JSON.parse(JSON.stringify({
+    released: pick(g.released), upcoming: pick(g.upcoming), reserved: pick(g.reserved), bought: pick(g.bought),
+  }));
+}
+
+test('listGroups: "me interesa" se reparte entre ya a la venta (hoy incluido) y próximamente', () => {
+  const out = groupsSummary(
+    [game(1, [rel('2026-03-12')]), game(2, [rel('2026-10-14')]), game(3, [rel('2026-11-20')])],
+    { 1: 'interesado', 2: 'interesado', 3: 'interesado' }
+  );
+  assert.deepEqual(out.released, [[1, '2026-03-12'], [2, '2026-10-14']]);
+  assert.deepEqual(out.upcoming, [[3, '2026-11-20']]);
+});
+
+test('listGroups: ordena por fecha, con las aproximadas y sin fecha al final', () => {
+  const out = groupsSummary(
+    [
+      game(1, [], 'Sin fechas'),
+      game(2, [rel(null, { human: 'Q4 2026' })]),
+      game(3, [rel('2027-02-01')]),
+      game(4, [rel('2026-12-01')]),
+    ],
+    { 1: 'interesado', 2: 'interesado', 3: 'interesado', 4: 'interesado' }
+  );
+  assert.deepEqual(out.upcoming, [[4, '2026-12-01'], [3, '2027-02-01'], [2, 'Q4 2026'], [1, 'Sin fecha']]);
+});
+
+test('listGroups: reservados y comprados en su grupo; descartados y sin estado fuera', () => {
+  const out = groupsSummary(
+    [game(1, [rel('2026-01-01')]), game(2, [rel('2026-02-01')]), game(3, [rel('2026-03-01')]), game(4, [rel('2026-04-01')])],
+    { 1: 'reservado', 2: 'comprado', 3: 'descartado' }
+  );
+  assert.deepEqual(out, { released: [], upcoming: [], reserved: [[1, '2026-01-01']], bought: [[2, '2026-02-01']] });
+});
+
+test('listGroups: misma fecha -> orden alfabético', () => {
+  const out = groupsSummary(
+    [game(1, [rel('2026-05-01')], 'Zelda'), game(2, [rel('2026-05-01')], 'Astro')],
+    { 1: 'interesado', 2: 'interesado' }
+  );
+  assert.deepEqual(out.released, [[2, '2026-05-01'], [1, '2026-05-01']]);
 });

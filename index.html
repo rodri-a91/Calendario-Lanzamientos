@@ -36,7 +36,11 @@
     <header class="topbar">
       <div class="topbar-row">
         <span class="brand">Lanzamientos</span>
-        <div class="month-nav">
+        <div class="toggle" role="group" aria-label="Sección">
+          <button data-section="calendar" class="active" aria-pressed="true">Calendario</button>
+          <button data-section="list" aria-pressed="false">Mi lista</button>
+        </div>
+        <div class="month-nav calendar-only">
           <button id="prev-month" aria-label="Mes anterior">‹</button>
           <input type="month" id="month-picker" class="month-picker" aria-label="Elegir mes" />
           <button id="next-month" aria-label="Mes siguiente">›</button>
@@ -44,7 +48,7 @@
         </div>
         <button id="logout" class="ghost" aria-label="Cerrar sesión">Salir</button>
       </div>
-      <div class="topbar-row">
+      <div class="topbar-row calendar-only">
         <div class="toggle" role="group" aria-label="Tipo de vista">
           <button data-view="agenda" class="active" aria-pressed="true">Agenda</button>
           <button data-view="grid" aria-pressed="false">Mes</button>

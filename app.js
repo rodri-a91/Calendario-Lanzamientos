@@ -35,13 +35,17 @@ function platClass(name) {
 
 // --- Estado de la aplicación ---
 const state = {
+  section: 'calendar',       // 'calendar' | 'list' (Mi lista)
   date: new Date(),          // apunta a un día del mes mostrado
   view: 'agenda',            // 'agenda' | 'grid'
   scope: 'general',          // 'general' | 'mine'
 };
 let currentUserId = null;
-let gamesById = new Map();    // igdbId -> juego (de la API)
-let trackedMap = new Map();   // igdbId -> { status }
+let gamesById = new Map();    // igdbId -> juego del mes mostrado (de la API)
+let trackedMap = new Map();   // igdbId -> { status, name, coverImageId }
+let listGamesById = new Map(); // igdbId -> juego con todas sus fechas (Mi lista)
+let listFetched = new Set();   // ids ya pedidos a /api/games en esta sesión
+let loadedMonth = null;        // mes que hay en gamesById
 let undoTimer = null;
 let loadSeq = 0;               // descarta respuestas de meses que ya no se muestran
 let trackedLoaded = false;     // tus estados se cargan una vez por sesión, no por mes
@@ -94,6 +98,9 @@ db.auth.onAuthStateChange((event, session) => {
     currentUserId = null;
     gamesById = new Map();
     trackedMap = new Map();
+    listGamesById = new Map();
+    listFetched = new Set();
+    loadedMonth = null;
     trackedLoaded = false;
     show('login');
   }
@@ -106,7 +113,8 @@ function show(which) {
 
 function showApp() {
   show('app');
-  loadAll({ jump: true }); // al abrir, saltar al próximo lanzamiento
+  if (state.section === 'list') loadList();
+  else loadAll({ jump: true }); // al abrir, saltar al próximo lanzamiento
 }
 
 // ============================================================
@@ -135,6 +143,7 @@ async function loadAll({ jump = false } = {}) {
 
     gamesById = new Map();
     for (const g of calendar.games) gamesById.set(g.igdbId, g);
+    loadedMonth = monthKey(state.date);
 
     render();
     if (jump && state.view === 'agenda') scrollToNextRelease();
@@ -153,11 +162,47 @@ async function fetchCalendar(month) {
 
 async function loadTracked() {
   // Gracias al RLS, esto solo devuelve TUS filas.
-  const { data, error } = await db.from('tracked_games').select('igdb_game_id, status');
+  const { data, error } = await db.from('tracked_games').select('igdb_game_id, status, game_name, cover_image_id');
   if (error) throw error;
   trackedMap = new Map();
-  for (const row of data) trackedMap.set(row.igdb_game_id, { status: row.status });
+  for (const row of data) {
+    trackedMap.set(row.igdb_game_id, { status: row.status, name: row.game_name, coverImageId: row.cover_image_id });
+  }
   trackedLoaded = true;
+}
+
+// Mi lista: pide a /api/games los juegos seguidos que aún no tenemos
+// (con todas sus fechas, sean del mes que sean) y pinta la lista.
+async function loadList() {
+  const seq = ++loadSeq;
+  const content = document.getElementById('content');
+  try {
+    if (!trackedLoaded) {
+      content.innerHTML = '<p class="empty-msg">Cargando…</p>';
+      await loadTracked();
+    }
+    const missing = myIds().filter((id) => !listFetched.has(id));
+    if (missing.length) {
+      content.innerHTML = '<p class="empty-msg">Cargando…</p>';
+      const chunks = [];
+      for (let i = 0; i < missing.length; i += 200) chunks.push(missing.slice(i, i + 200));
+      const results = await Promise.all(chunks.map(fetchGames));
+      for (const g of results.flat()) listGamesById.set(g.igdbId, g);
+      for (const id of missing) listFetched.add(id);
+    }
+    if (seq !== loadSeq) return;
+    render();
+  } catch (err) {
+    if (seq !== loadSeq) return;
+    console.error(err);
+    content.innerHTML = '<p class="empty-msg">No se pudo cargar tu lista.</p>';
+  }
+}
+
+async function fetchGames(ids) {
+  const res = await fetch(`/api/games?ids=${ids.join(',')}`);
+  if (!res.ok) throw new Error('API ' + res.status);
+  return (await res.json()).games;
 }
 
 // ============================================================
@@ -166,6 +211,21 @@ async function loadTracked() {
 
 function statusOf(igdbId) {
   return trackedMap.get(igdbId)?.status ?? null;
+}
+
+// Ids de los juegos que sigo (cualquier estado menos descartado)
+function myIds() {
+  return [...trackedMap].filter(([, t]) => ESTADOS_POSITIVOS.includes(t.status)).map(([id]) => id);
+}
+
+// Busca un juego en lo cargado. Si no está en la caché (p. ej. IGDB lo
+// movió a un mes aún no descargado), lo montamos con lo que guardaste.
+function findGame(igdbId) {
+  const g = listGamesById.get(igdbId) ?? gamesById.get(igdbId);
+  if (g) return g;
+  const t = trackedMap.get(igdbId);
+  if (!t) return null;
+  return { igdbId, name: t.name ?? 'Sin título', coverImageId: t.coverImageId ?? null, hypes: 0, url: null, releases: [] };
 }
 
 function visibleGames() {
@@ -207,20 +267,20 @@ function render() {
   // Etiquetas de la cabecera
   document.getElementById('month-picker').value = monthKey(state.date);
 
-  const games = visibleGames();
-  const content = document.getElementById('content');
-
-  if (games.length === 0) {
-    content.innerHTML = '<p class="empty-msg">No hay juegos que mostrar con estos filtros.</p>';
-    return;
-  }
-
   // Repintar destruye los botones: si el foco estaba en uno de estado
   // (teclado), lo devolvemos al mismo botón de la tarjeta nueva.
   const focused = document.activeElement?.closest?.('#content button[data-action]');
   const focusKey = focused && { id: focused.dataset.id, action: focused.dataset.action };
 
-  content.innerHTML = state.view === 'agenda' ? renderAgenda(games) : renderGrid(games);
+  const content = document.getElementById('content');
+  if (state.section === 'list') {
+    content.innerHTML = renderList();
+  } else {
+    const games = visibleGames();
+    content.innerHTML = games.length === 0
+      ? '<p class="empty-msg">No hay juegos que mostrar con estos filtros.</p>'
+      : state.view === 'agenda' ? renderAgenda(games) : renderGrid(games);
+  }
 
   if (focusKey) {
     content.querySelector(`button[data-id="${focusKey.id}"][data-action="${focusKey.action}"]`)?.focus();
@@ -242,16 +302,18 @@ function renderAgenda(games) {
   for (const iso of fechas) {
     const d = new Date(iso + 'T00:00:00');
     const dow = DOW[(d.getDay() + 6) % 7];
-    html += `<div class="day-head" data-date="${iso}">${dow} · ${d.getDate()} ${MESES[d.getMonth()]}</div>`;
+    // Cada día en su <section>: así su cabecera (sticky) se queda arriba
+    // mientras haya tarjetas de ese día y la empuja la del siguiente.
+    html += `<section class="day"><div class="day-head" data-date="${iso}">${dow} · ${d.getDate()} ${MESES[d.getMonth()]}</div>`;
     html += '<div class="cards">';
     for (const r of byDate.get(iso)) html += cardHTML(r.game, r.platforms);
-    html += '</div>';
+    html += '</div></section>';
   }
 
   if (approx.length) {
-    html += `<div class="day-head">Sin fecha exacta</div><div class="cards">`;
+    html += `<section class="day"><div class="day-head">Sin fecha exacta</div><div class="cards">`;
     for (const r of approx) html += cardHTML(r.game, r.platforms, r.human);
-    html += '</div>';
+    html += '</div></section>';
   }
   return html;
 }
@@ -267,19 +329,12 @@ function cardHTML(game, platforms, humanLabel) {
     ? `<a class="cover-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="Ver ficha en IGDB">${coverInner}</a>`
     : coverInner;
 
-  const plats = (platforms ?? game.releases[0]?.platforms ?? [])
-    .map((p) => `<span class="chip ${platClass(p)}">${escapeHtml(p)}</span>`).join('');
+  const plats = chipsHTML(platforms ?? game.releases[0]?.platforms);
 
   const label = humanLabel ? `<div class="date-approx">${escapeHtml(humanLabel)}</div>` : '';
   const hot = game.hypes >= HOT_THRESHOLD;
   const hypeBadge = `<div class="hype-badge${hot ? ' hot' : ''}">${FLAME} ${game.hypes}</div>`;
   const cardClass = (s && ESTADOS_POSITIVOS.includes(s) ? ` s-${s}` : '') + (hot ? ' hot' : '');
-
-  // Los estados son interruptores (aria-pressed); descartar es una acción.
-  const btn = (action, on, extra = '') => {
-    const pressed = action === 'descartado' ? '' : ` aria-pressed="${on}"`;
-    return `<button data-id="${game.igdbId}" data-action="${action}"${pressed} aria-label="${LABELS[action]}" title="${LABELS[action]}" class="${on ? 'on-' + action : ''} ${extra}">${ICONS[action]}</button>`;
-  };
 
   return `
     <div class="card${cardClass}">
@@ -288,12 +343,80 @@ function cardHTML(game, platforms, humanLabel) {
       <div class="platforms">${plats}</div>
       ${label}
       ${hypeBadge}
+      ${statusButtons(game)}
+    </div>`;
+}
+
+function chipsHTML(platforms) {
+  return (platforms ?? [])
+    .map((p) => `<span class="chip ${platClass(p)}">${escapeHtml(p)}</span>`).join('');
+}
+
+// Botones de estado de un juego (tarjeta del calendario y fila de Mi lista).
+// Los estados son interruptores (aria-pressed); descartar es una acción.
+function statusButtons(game) {
+  const s = statusOf(game.igdbId);
+  const btn = (action, on, extra = '') => {
+    const pressed = action === 'descartado' ? '' : ` aria-pressed="${on}"`;
+    return `<button data-id="${game.igdbId}" data-action="${action}"${pressed} aria-label="${LABELS[action]}" title="${LABELS[action]}" class="${on ? 'on-' + action : ''} ${extra}">${ICONS[action]}</button>`;
+  };
+  return `
       <div class="actions">
         ${btn('interesado', s === 'interesado')}
         ${btn('reservado', s === 'reservado')}
         ${btn('comprado', s === 'comprado')}
         ${btn('descartado', false, 'dismiss')}
+      </div>`;
+}
+
+// ------------------------------------------------------------
+//  Mi lista: tus juegos de todos los meses, agrupados por estado
+// ------------------------------------------------------------
+
+function renderList() {
+  const games = myIds().map(findGame).filter(Boolean);
+  if (games.length === 0) {
+    return '<p class="empty-msg">Aún no sigues ningún juego. Márcalo con la estrella en el calendario y aparecerá aquí.</p>';
+  }
+
+  const g = listGroups(games, statusOf, todayISO());
+  const group = (title, entries, collapsed = false) => {
+    if (!entries.length) return '';
+    const head = `${escapeHtml(title)} <span class="count">${entries.length}</span>`;
+    const rows = `<div class="rows">${entries.map(listRowHTML).join('')}</div>`;
+    return collapsed
+      ? `<details class="day"><summary class="day-head">${head}</summary>${rows}</details>`
+      : `<section class="day"><div class="day-head">${head}</div>${rows}</section>`;
+  };
+
+  return group('Me interesa · ya a la venta', g.released)
+    + group('Me interesa · próximamente', g.upcoming)
+    + group('Reservado', g.reserved)
+    + group('Comprado', g.bought, true);
+}
+
+function listRowHTML({ game, dateISO, label, platforms }) {
+  const s = statusOf(game.igdbId);
+  const cover = game.coverImageId
+    ? `<img class="row-cover" loading="lazy" src="https://images.igdb.com/igdb/image/upload/t_cover_small/${encodeURIComponent(game.coverImageId)}.jpg" alt="">`
+    : '<div class="row-cover placeholder"></div>';
+  const url = safeUrl(game.url);
+  const name = url
+    ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(game.name)}</a>`
+    : escapeHtml(game.name);
+  let when = escapeHtml(label ?? 'Sin fecha');
+  if (dateISO) {
+    const d = new Date(dateISO + 'T00:00:00');
+    when = `${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`;
+  }
+  return `
+    <div class="row s-${s}">
+      ${cover}
+      <div class="row-main">
+        <div class="name">${name}</div>
+        <div class="row-meta"><span class="when">${when}</span>${chipsHTML(platforms)}</div>
       </div>
+      ${statusButtons(game)}
     </div>`;
 }
 
@@ -315,6 +438,9 @@ function renderGrid(games) {
   const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // lunes = 0
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
+  const now = new Date();
+  const todayDay = now.getFullYear() === year && now.getMonth() === month ? now.getDate() : null;
+
   let html = '<div class="grid">';
   for (const d of DOW) html += `<div class="dow">${d}</div>`;
   for (let i = 0; i < firstDow; i++) html += '<div class="cell empty"></div>';
@@ -327,7 +453,8 @@ function renderGrid(games) {
       else mini += `<span>${escapeHtml(g.name)}</span>`;
     }
     const more = list.length > 3 ? `<div class="more">+${list.length - 3} más</div>` : '';
-    html += `<div class="cell"><div class="num">${day}</div><div class="mini">${mini}</div>${more}</div>`;
+    const today = day === todayDay ? ' today" aria-current="date' : '';
+    html += `<div class="cell${today}"><div class="num">${day}</div><div class="mini">${mini}</div>${more}</div>`;
   }
   html += '</div>';
 
@@ -357,7 +484,7 @@ document.getElementById('content').addEventListener('click', async (e) => {
 
   const igdbId = Number(btn.dataset.id);
   const action = btn.dataset.action;
-  const game = gamesById.get(igdbId);
+  const game = findGame(igdbId);
   if (!game) return;
 
   const prev = statusOf(igdbId);
@@ -378,7 +505,7 @@ document.getElementById('content').addEventListener('click', async (e) => {
 // y avisa. Devuelve true si se guardó.
 async function changeStatus(game, status) {
   const prev = statusOf(game.igdbId);
-  setLocalStatus(game.igdbId, status);
+  setLocalStatus(game, status);
   render();
 
   const { error } = status ? await saveStatus(game, status) : await deleteStatus(game);
@@ -387,16 +514,16 @@ async function changeStatus(game, status) {
   console.error('Error al guardar estado:', error);
   // Solo revertimos si nadie ha vuelto a cambiar el juego mientras tanto.
   if (statusOf(game.igdbId) === status) {
-    setLocalStatus(game.igdbId, prev);
+    setLocalStatus(game, prev);
     render();
   }
   showToast('No se pudo guardar el cambio. Inténtalo de nuevo.');
   return false;
 }
 
-function setLocalStatus(igdbId, status) {
-  if (status) trackedMap.set(igdbId, { status });
-  else trackedMap.delete(igdbId);
+function setLocalStatus(game, status) {
+  if (status) trackedMap.set(game.igdbId, { status, name: game.name, coverImageId: game.coverImageId });
+  else trackedMap.delete(game.igdbId);
 }
 
 function saveStatus(game, status) {
@@ -494,6 +621,26 @@ function setPressed(selector, chosen) {
   });
 }
 
+// Calendario <-> Mi lista. En la lista se ocultan los controles del
+// calendario (CSS: body[data-section="list"] .calendar-only).
+document.querySelectorAll('[data-section]').forEach((b) => {
+  b.addEventListener('click', () => {
+    if (state.section === b.dataset.section) return;
+    state.section = b.dataset.section;
+    document.body.dataset.section = state.section;
+    setPressed('[data-section]', b);
+    window.scrollTo(0, 0);
+    if (state.section === 'list') {
+      loadList();
+    } else if (loadedMonth === monthKey(state.date)) {
+      loadSeq++; // descarta una carga de la lista que siga en vuelo
+      render();
+    } else {
+      loadAll();
+    }
+  });
+});
+
 document.querySelectorAll('[data-view]').forEach((b) => {
   b.addEventListener('click', () => {
     state.view = b.dataset.view;
@@ -515,6 +662,15 @@ document.querySelectorAll('[data-scope]').forEach((b) => {
   const picker = document.getElementById('month-picker');
   picker.min = monthKey(MIN_MONTH);
   picker.max = monthKey(MAX_MONTH);
+}
+
+// Altura real de la barra (cambia según el ancho) para que las cabeceras
+// sticky se peguen justo debajo.
+{
+  const topbar = document.querySelector('.topbar');
+  new ResizeObserver(() => {
+    document.documentElement.style.setProperty('--topbar-h', `${topbar.offsetHeight}px`);
+  }).observe(topbar);
 }
 
 // Arrancar

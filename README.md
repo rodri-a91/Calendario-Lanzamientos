@@ -3,7 +3,9 @@
 Calendario mensual de lanzamientos de videojuegos (PC, PlayStation, Xbox y
 Switch) con datos de [IGDB](https://www.igdb.com/). Permite marcar cada juego
 como *me interesa*, *reservado*, *comprado* o *no me interesa*. Los juegos más
-esperados (hype de IGDB) se destacan.
+esperados (hype de IGDB) se destacan, y en **Mi lista** ves todos los que
+sigues, sean del mes que sean (p. ej. los que te interesaban y aún no has
+comprado).
 
 Se instala como app (PWA) y se despliega en Vercel, con Supabase como base de
 datos y autenticación.
@@ -12,6 +14,7 @@ datos y autenticación.
 
 ```
 navegador ──► /api/calendar?month=YYYY-MM ──► Supabase (caché) ──► IGDB
+    │    ──► /api/games?ids=1,2,3 ─────────► Supabase (caché)
     │                (Vercel)
     └──► Supabase (tracked_games, con RLS)
 ```
@@ -20,7 +23,10 @@ navegador ──► /api/calendar?month=YYYY-MM ──► Supabase (caché) ─�
   Sigue un *cache-aside*: si el mes se descargó hace menos de 12 h lo lee de
   Supabase; si no, lo pide a IGDB, lo guarda y borra las fechas que IGDB ya no
   devuelve. Si IGDB falla, sirve la caché aunque esté caducada.
-- **El navegador** filtra (descartados, "solo míos") y
+- **`/api/games`** devuelve juegos concretos con todas sus fechas en caché,
+  para Mi lista. Solo lee la caché (no llama a IGDB); un juego que ya no esté
+  en ella se muestra con el nombre y la carátula guardados en `tracked_games`.
+- **El navegador** filtra (descartados, "solo míos"), agrupa Mi lista y
   guarda tus estados directamente en Supabase con la *anon key*; el RLS hace
   que cada usuario solo vea y toque sus filas.
 - **Fecha principal**: un juego aparece una vez por mes, en la fecha que sale
@@ -32,9 +38,10 @@ navegador ──► /api/calendar?month=YYYY-MM ──► Supabase (caché) ─�
 | Archivo | Qué hace |
 | --- | --- |
 | `index.html`, `styles.css`, `app.js` | Interfaz (sin build ni framework) |
-| `releases.js` | Elección de la fecha principal (funciones puras) |
+| `releases.js` | Fecha principal y grupos de Mi lista (funciones puras) |
 | `config.js` | URL y *anon key* públicas de Supabase |
-| `api/calendar.js` | Endpoint de Vercel |
+| `api/calendar.js` | Endpoint del calendario de un mes |
+| `api/games.js` | Endpoint de juegos por id (Mi lista) |
 | `lib/igdb.js` | Descarga de IGDB y caché en Supabase |
 | `lib/transform.js` | Transformaciones de datos (funciones puras) |
 | `lib/igdbToken.js` | Token de Twitch, guardado en Supabase |

@@ -58,9 +58,21 @@ body {
 .toggle button + button { border-left: 1px solid var(--border); }
 .toggle button.active { background: var(--surface-2); color: var(--text); font-weight: 500; }
 
+/* En "Mi lista" sobran los controles del calendario */
+body[data-section="list"] .calendar-only { display: none; }
+
 
 /* ---------- AGENDA ---------- */
-.day-head { font-size: 14px; font-weight: 500; color: var(--muted); margin: 1.5rem 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); text-transform: capitalize; }
+/* La cabecera de cada día se queda pegada bajo la barra mientras haya
+   tarjetas de ese día (--topbar-h lo calcula app.js). */
+.day-head {
+  position: sticky; top: var(--topbar-h, 0px); z-index: 5; background: var(--bg);
+  font-size: 14px; font-weight: 500; color: var(--muted);
+  margin: 1rem 0 12px; padding: 8px 0 6px; border-bottom: 1px solid var(--border);
+}
+.day-head[data-date] { text-transform: capitalize; }
+.day-head .count { font-weight: 400; margin-left: 4px; }
+summary.day-head { cursor: pointer; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
@@ -92,9 +104,29 @@ body {
 /* Foco visible al navegar con teclado */
 button:focus-visible, .cover-link:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Móvil: marca y "Salir" en la primera línea; la navegación de meses
-   ocupa la segunda entera, con el selector estirado entre las flechas. */
+/* ---------- MI LISTA ---------- */
+.rows { display: flex; flex-direction: column; gap: 10px; }
+.row {
+  display: grid; grid-template-columns: 48px 1fr; grid-template-areas: "cover main" "cover actions";
+  column-gap: 12px; row-gap: 8px; align-items: center;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px;
+}
+.row-cover { grid-area: cover; align-self: start; width: 48px; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 6px; background: var(--surface-2); }
+.row-main { grid-area: main; min-width: 0; }
+.row .name { font-size: 14px; font-weight: 500; line-height: 1.3; }
+.row .name a { color: inherit; text-decoration: none; }
+.row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.row-meta .when { margin-right: 2px; }
+.row .actions { grid-area: actions; margin-top: 0; }
+@media (min-width: 601px) {
+  .row { grid-template-columns: 48px 1fr auto; grid-template-areas: "cover main actions"; }
+}
+
+/* Móvil: sección y "Salir" en la primera línea (sin la marca, que no
+   cabe); la navegación de meses ocupa la segunda entera, con el
+   selector estirado entre las flechas. */
 @media (max-width: 600px) {
+  .brand { display: none; }
   .month-nav { order: 3; width: 100%; }
   .month-picker { flex: 1; min-width: 0; }
 }
@@ -113,7 +145,8 @@ button:focus-visible, .cover-link:focus-visible, input:focus-visible { outline: 
 }
 
 /* ---------- REJILLA MENSUAL ---------- */
-.grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+/* minmax(0, 1fr): las 7 columnas caben siempre; los nombres largos se recortan */
+.grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .grid .dow { font-size: 12px; color: var(--muted); text-align: center; padding: 4px 0; text-transform: capitalize; }
 .cell { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; min-height: 92px; padding: 6px; font-size: 12px; }
 .cell.empty { background: transparent; border: none; }
@@ -123,6 +156,8 @@ button:focus-visible, .cover-link:focus-visible, input:focus-visible { outline: 
 .cell .mini span.hot { background: var(--warn-bg); color: var(--warn-tx); }
 .cell .mini span svg { width: 10px; height: 10px; vertical-align: -1px; margin-right: 1px; }
 .cell .more { color: var(--muted); margin-top: 3px; }
+.cell.today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.cell.today .num { display: inline-block; background: var(--accent); color: #fff; border-radius: 999px; padding: 0 7px; }
 
 .empty-msg { color: var(--muted); padding: 2rem 0; text-align: center; }
 .approx { margin-top: 1rem; font-size: 13px; color: var(--muted); }

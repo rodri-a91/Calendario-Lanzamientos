@@ -40,3 +40,31 @@ function expandReleases(games) {
   }
   return { exact, approx };
 }
+
+// Agrupa tus juegos para "Mi lista" (today: 'YYYY-MM-DD'). Cada entrada
+// lleva su fecha principal (dateISO) o, si no es exacta, el texto (label).
+// Dentro de cada grupo se ordena por fecha; las que no la tienen, al final.
+function listGroups(games, statusOf, today) {
+  const { exact, approx } = expandReleases(games);
+  const entries = [
+    ...exact.map((e) => ({ game: e.game, dateISO: e.dateISO, label: null, platforms: e.platforms })),
+    ...approx.map((a) => ({ game: a.game, dateISO: null, label: a.human, platforms: a.platforms })),
+  ];
+  entries.sort((a, b) => {
+    if (a.dateISO !== b.dateISO) {
+      if (!a.dateISO) return 1;
+      if (!b.dateISO) return -1;
+      return a.dateISO < b.dateISO ? -1 : 1;
+    }
+    return a.game.name.localeCompare(b.game.name, 'es');
+  });
+
+  const groups = { released: [], upcoming: [], reserved: [], bought: [] };
+  for (const e of entries) {
+    const s = statusOf(e.game.igdbId);
+    if (s === 'interesado') (e.dateISO && e.dateISO <= today ? groups.released : groups.upcoming).push(e);
+    else if (s === 'reservado') groups.reserved.push(e);
+    else if (s === 'comprado') groups.bought.push(e);
+  }
+  return groups;
+}
