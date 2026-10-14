@@ -14,11 +14,11 @@ create table public.games_cache (
   igdb_game_id   bigint primary key,
   name           text not null,
   cover_image_id text,
-  platforms      text[],             -- ej. {'PC','PS5','Xbox Series'}
+  platforms      text[],             -- sin uso (las plataformas salen de release_dates)
   hypes          integer default 0,  -- para el filtro de relevancia
-  summary        text,
+  summary        text,               -- sin uso
   url            text,               -- ficha del juego en igdb.com
-  updated_at     timestamptz not null default now()
+  updated_at     timestamptz not null default now()  -- última descarga de IGDB
 );
 
 -- Fechas de lanzamiento: una fila por release de IGDB
@@ -74,17 +74,19 @@ create table public.tracked_games (
 --  ROW LEVEL SECURITY
 -- ------------------------------------------------------------
 
--- Tus juegos: solo el dueño ve y modifica sus filas
+-- Tus juegos: solo el dueño ve y modifica sus filas.
+-- (select auth.uid()) en vez de auth.uid(): Postgres lo evalúa una vez
+-- por consulta y no una vez por fila (recomendación de Supabase).
 alter table public.tracked_games enable row level security;
 
 create policy "select_propios" on public.tracked_games
-  for select using (auth.uid() = user_id);
+  for select using ((select auth.uid()) = user_id);
 create policy "insert_propios" on public.tracked_games
-  for insert with check (auth.uid() = user_id);
+  for insert with check ((select auth.uid()) = user_id);
 create policy "update_propios" on public.tracked_games
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  for update using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 create policy "delete_propios" on public.tracked_games
-  for delete using (auth.uid() = user_id);
+  for delete using ((select auth.uid()) = user_id);
 
 -- Tablas de caché: RLS activado SIN políticas.
 -- Quedan inaccesibles desde el navegador (anon/authenticated).

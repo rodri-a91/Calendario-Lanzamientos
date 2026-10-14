@@ -225,7 +225,16 @@ function render() {
     return;
   }
 
+  // Repintar destruye los botones: si el foco estaba en uno de estado
+  // (teclado), lo devolvemos al mismo botón de la tarjeta nueva.
+  const focused = document.activeElement?.closest?.('#content button[data-action]');
+  const focusKey = focused && { id: focused.dataset.id, action: focused.dataset.action };
+
   content.innerHTML = state.view === 'agenda' ? renderAgenda(games) : renderGrid(games);
+
+  if (focusKey) {
+    content.querySelector(`button[data-id="${focusKey.id}"][data-action="${focusKey.action}"]`)?.focus();
+  }
 }
 
 function renderAgenda(games) {
@@ -276,8 +285,11 @@ function cardHTML(game, platforms, humanLabel) {
   const hypeBadge = `<div class="hype-badge${hot ? ' hot' : ''}">${FLAME} ${game.hypes}</div>`;
   const cardClass = (s && ESTADOS_POSITIVOS.includes(s) ? ` s-${s}` : '') + (hot ? ' hot' : '');
 
-  const btn = (action, on, extra = '') =>
-    `<button data-id="${game.igdbId}" data-action="${action}" aria-label="${LABELS[action]}" title="${LABELS[action]}" class="${on ? 'on-' + action : ''} ${extra}">${ICONS[action]}</button>`;
+  // Los estados son interruptores (aria-pressed); descartar es una acción.
+  const btn = (action, on, extra = '') => {
+    const pressed = action === 'descartado' ? '' : ` aria-pressed="${on}"`;
+    return `<button data-id="${game.igdbId}" data-action="${action}"${pressed} aria-label="${LABELS[action]}" title="${LABELS[action]}" class="${on ? 'on-' + action : ''} ${extra}">${ICONS[action]}</button>`;
+  };
 
   return `
     <div class="card${cardClass}">
@@ -474,10 +486,18 @@ document.getElementById('today').addEventListener('click', () => {
   loadAll({ jump: true });
 });
 
+// Marca el botón elegido de un grupo (visual y para lectores de pantalla)
+function setPressed(selector, chosen) {
+  document.querySelectorAll(selector).forEach((x) => {
+    x.classList.toggle('active', x === chosen);
+    x.setAttribute('aria-pressed', String(x === chosen));
+  });
+}
+
 document.querySelectorAll('[data-view]').forEach((b) => {
   b.addEventListener('click', () => {
     state.view = b.dataset.view;
-    document.querySelectorAll('[data-view]').forEach((x) => x.classList.toggle('active', x === b));
+    setPressed('[data-view]', b);
     render();
   });
 });
@@ -485,7 +505,7 @@ document.querySelectorAll('[data-view]').forEach((b) => {
 document.querySelectorAll('[data-scope]').forEach((b) => {
   b.addEventListener('click', () => {
     state.scope = b.dataset.scope;
-    document.querySelectorAll('[data-scope]').forEach((x) => x.classList.toggle('active', x === b));
+    setPressed('[data-scope]', b);
     render();
   });
 });

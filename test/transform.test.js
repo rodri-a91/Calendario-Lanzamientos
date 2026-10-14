@@ -58,7 +58,6 @@ test('buildCacheRows: deduplica juegos y crea una fila por release', () => {
     igdb_game_id: 100,
     name: 'Juego',
     cover_image_id: 'abc',
-    platforms: [],
     hypes: 50,
     url: 'https://www.igdb.com/games/juego',
   });
@@ -72,7 +71,7 @@ test('buildCacheRows: fechas aproximadas, valores ausentes y plataformas descono
   const { games, releases } = buildCacheRows([
     igdbRow({ date: undefined, human: 'Q4 2026', platform: 999, release_region: undefined, game: { id: 7 } }),
   ]);
-  assert.deepEqual(games[0], { igdb_game_id: 7, name: 'Sin título', cover_image_id: null, platforms: [], hypes: 0, url: null });
+  assert.deepEqual(games[0], { igdb_game_id: 7, name: 'Sin título', cover_image_id: null, hypes: 0, url: null });
   assert.equal(releases[0].release_date, null);
   assert.equal(releases[0].date_precision, 'aproximada');
   assert.equal(releases[0].platform, '999');
