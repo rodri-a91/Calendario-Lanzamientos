@@ -4,7 +4,7 @@ const MAX_YEARS_AWAY = 3;
 
 // Endpoint: GET /api/calendar?month=YYYY-MM
 // Devuelve el calendario general del mes (agrupado por juego).
-// Todo lo personal (tus estados, el deslizador de hype, los descartados)
+// Todo lo personal (tus estados, los descartados)
 // lo resuelve el navegador; esta función es "tonta" y cacheable.
 export default async function handler(req, res) {
   if (req.method !== 'GET') {

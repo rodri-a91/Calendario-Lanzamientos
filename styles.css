@@ -58,10 +58,6 @@ body {
 .toggle button + button { border-left: 1px solid var(--border); }
 .toggle button.active { background: var(--surface-2); color: var(--text); font-weight: 500; }
 
-.slider { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 220px; }
-.slider label { font-size: 14px; color: var(--muted); }
-.slider input { flex: 1; }
-#hype-out { font-size: 13px; font-weight: 500; min-width: 64px; }
 
 /* ---------- AGENDA ---------- */
 .day-head { font-size: 14px; font-weight: 500; color: var(--muted); margin: 1.5rem 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); text-transform: capitalize; }
@@ -96,10 +92,20 @@ body {
 /* Foco visible al navegar con teclado */
 button:focus-visible, .cover-link:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Móvil: marca y "Salir" en la primera línea; la navegación de meses
+   ocupa la segunda entera, con el selector estirado entre las flechas. */
+@media (max-width: 600px) {
+  .month-nav { order: 3; width: 100%; }
+  .month-picker { flex: 1; min-width: 0; }
+}
+
 /* Pantallas táctiles: objetivos de ~44px para el dedo */
 @media (pointer: coarse) {
   .month-nav button { width: 44px; height: 44px; }
-  .month-picker { min-height: 44px; }
+  /* Safari en iOS ignora min-height en los campos de fecha si conserva
+     su aspecto nativo: quitamos la apariencia y fijamos la altura. */
+  .month-picker { -webkit-appearance: none; appearance: none; height: 44px; text-align: center; }
+  .month-picker::-webkit-date-and-time-value { text-align: center; }
   .ghost, .toggle button { min-height: 44px; }
   .actions button { flex: 1; width: auto; height: 44px; }
   .actions button.dismiss { margin-left: 8px; }

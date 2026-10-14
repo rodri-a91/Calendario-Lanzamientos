@@ -38,7 +38,6 @@ const state = {
   date: new Date(),          // apunta a un día del mes mostrado
   view: 'agenda',            // 'agenda' | 'grid'
   scope: 'general',          // 'general' | 'mine'
-  minHypes: 0,
 };
 let currentUserId = null;
 let gamesById = new Map();    // igdbId -> juego (de la API)
@@ -46,7 +45,6 @@ let trackedMap = new Map();   // igdbId -> { status }
 let undoTimer = null;
 let loadSeq = 0;               // descarta respuestas de meses que ya no se muestran
 let trackedLoaded = false;     // tus estados se cargan una vez por sesión, no por mes
-let renderQueued = false;
 
 // Rango de meses que acepta la API (ver MAX_YEARS_AWAY en api/calendar.js)
 const YEARS_AWAY = 3;
@@ -178,14 +176,8 @@ function visibleGames() {
     return all.filter((g) => ESTADOS_POSITIVOS.includes(statusOf(g.igdbId)));
   }
 
-  // General: oculto descartados; aplico el deslizador de hype,
-  // pero los juegos que sigo se muestran siempre, tengan el hype que tengan.
-  return all.filter((g) => {
-    const s = statusOf(g.igdbId);
-    if (s === 'descartado') return false;
-    if (ESTADOS_POSITIVOS.includes(s)) return true;
-    return g.hypes >= state.minHypes;
-  });
+  // General: todo menos los descartados.
+  return all.filter((g) => statusOf(g.igdbId) !== 'descartado');
 }
 
 // ============================================================
@@ -214,8 +206,6 @@ function scrollToNextRelease() {
 function render() {
   // Etiquetas de la cabecera
   document.getElementById('month-picker').value = monthKey(state.date);
-  document.getElementById('hype-out').textContent =
-    state.minHypes === 0 ? 'todo' : `hype ≥ ${state.minHypes}`;
 
   const games = visibleGames();
   const content = document.getElementById('content');
@@ -509,21 +499,6 @@ document.querySelectorAll('[data-scope]').forEach((b) => {
     render();
   });
 });
-
-document.getElementById('hype').addEventListener('input', (e) => {
-  state.minHypes = Number(e.target.value);
-  scheduleRender(); // filtrado sin tocar la red, como mucho un render por frame
-});
-
-// Agrupa varios renders seguidos (p. ej. al arrastrar el deslizador) en uno por frame.
-function scheduleRender() {
-  if (renderQueued) return;
-  renderQueued = true;
-  requestAnimationFrame(() => {
-    renderQueued = false;
-    render();
-  });
-}
 
 // El selector solo ofrece los meses que acepta la API
 {

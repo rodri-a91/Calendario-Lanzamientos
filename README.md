@@ -2,8 +2,8 @@
 
 Calendario mensual de lanzamientos de videojuegos (PC, PlayStation, Xbox y
 Switch) con datos de [IGDB](https://www.igdb.com/). Permite marcar cada juego
-como *me interesa*, *reservado*, *comprado* o *no me interesa*, y filtrar por
-relevancia (hype de IGDB).
+como *me interesa*, *reservado*, *comprado* o *no me interesa*. Los juegos más
+esperados (hype de IGDB) se destacan.
 
 Se instala como app (PWA) y se despliega en Vercel, con Supabase como base de
 datos y autenticación.
@@ -20,7 +20,7 @@ navegador ──► /api/calendar?month=YYYY-MM ──► Supabase (caché) ─�
   Sigue un *cache-aside*: si el mes se descargó hace menos de 12 h lo lee de
   Supabase; si no, lo pide a IGDB, lo guarda y borra las fechas que IGDB ya no
   devuelve. Si IGDB falla, sirve la caché aunque esté caducada.
-- **El navegador** filtra (deslizador de hype, descartados, "solo míos") y
+- **El navegador** filtra (descartados, "solo míos") y
   guarda tus estados directamente en Supabase con la *anon key*; el RLS hace
   que cada usuario solo vea y toque sus filas.
 - **Fecha principal**: un juego aparece una vez por mes, en la fecha que sale
@@ -74,8 +74,8 @@ Supabase.
 
 ## Datos de IGDB a tener en cuenta
 
-- Solo se descargan juegos con al menos 1 de hype; el resto del filtro lo
-  hace el deslizador en el navegador.
+- Solo se descargan juegos con al menos 1 de hype, para dejar fuera los que
+  nadie espera. Los de 30 o más se destacan con 🔥.
 - La precisión de la fecha se deduce del texto de IGDB: `"Oct 20, 2026"` es
   exacta; `"Q4 2026"`, `"2026"` o `"TBD"` son aproximadas.
 - La región sale de `release_region` (1 Europa, 2 Norteamérica, 5 Japón,
