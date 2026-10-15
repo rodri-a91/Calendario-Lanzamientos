@@ -69,6 +69,12 @@
     <button id="undo-btn">Deshacer</button>
   </div>
 
+  <!-- Ficha flotante de un juego (la rellena app.js) -->
+  <dialog id="game-sheet" class="sheet" aria-labelledby="sheet-title">
+    <button id="sheet-close" class="sheet-close" aria-label="Cerrar ficha">✕</button>
+    <div id="sheet-body"></div>
+  </dialog>
+
   <!-- Versión fija + SRI: si el CDN sirviera otro contenido, el navegador no lo ejecuta.
        Para actualizar: cambia la versión y recalcula el hash
        (openssl dgst -sha384 -binary supabase.js | openssl base64 -A). -->

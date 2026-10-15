@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { monthWindow, isPreciseDate, regionOf, buildCacheRows, groupByGame } from '../lib/transform.js';
+import { monthWindow, isPreciseDate, regionOf, buildCacheRows, groupByGame, buildGameDetails } from '../lib/transform.js';
 
 // Segundos Unix de una fecha UTC (como los da IGDB)
 const unix = (iso) => Date.parse(iso + 'T00:00:00Z') / 1000;
@@ -135,4 +135,44 @@ test('groupByGame: devuelve la hora real de descarga, o null', () => {
   assert.equal(groupByGame('2026-10', [], '2026-10-13T08:00:00.000Z').fetchedAt, '2026-10-13T08:00:00.000Z');
   assert.equal(groupByGame('2026-10', []).fetchedAt, null);
   assert.equal(groupByGame('2026-10', []).month, '2026-10');
+});
+
+// --- buildGameDetails ---
+
+test('buildGameDetails: compacta la ficha de IGDB', () => {
+  const out = buildGameDetails({
+    summary: 'Resumen',
+    genres: [{ id: 1, name: 'Adventure' }],
+    game_modes: [{ id: 1, name: 'Single player' }],
+    involved_companies: [
+      { company: { name: 'Rockstar Games' }, developer: true, publisher: true },
+      { company: { name: 'Take-Two Interactive' }, developer: false, publisher: true },
+      { company: { name: 'Rockstar Games' }, developer: true, publisher: false },
+    ],
+    screenshots: Array.from({ length: 8 }, (_, i) => ({ image_id: `s${i}` })),
+    videos: [{ name: 'Gameplay', video_id: 'a' }, { name: 'Launch Trailer', video_id: 'b' }],
+    aggregated_rating: 87.6,
+  });
+  assert.deepEqual(out, {
+    summary: 'Resumen',
+    genres: ['Adventure'],
+    modes: ['Single player'],
+    developers: ['Rockstar Games'],
+    publishers: ['Take-Two Interactive'],
+    screenshots: ['s0', 's1', 's2', 's3', 's4', 's5'],
+    trailer: 'b',
+    rating: 88,
+  });
+});
+
+test('buildGameDetails: sin datos (o IGDB no devuelve el juego) da una ficha vacía', () => {
+  const empty = { summary: null, genres: [], modes: [], developers: [], publishers: [], screenshots: [], trailer: null, rating: null };
+  assert.deepEqual(buildGameDetails(undefined), empty);
+  assert.deepEqual(buildGameDetails({}), empty);
+});
+
+test('buildGameDetails: sin "trailer" usa el primer vídeo; sin nota de crítica usa la total', () => {
+  const out = buildGameDetails({ videos: [{ name: 'Gameplay', video_id: 'x' }], total_rating: 70.2 });
+  assert.equal(out.trailer, 'x');
+  assert.equal(out.rating, 70);
 });

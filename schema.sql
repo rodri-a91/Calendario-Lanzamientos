@@ -43,6 +43,16 @@ create table public.cache_meta (
   fetched_at timestamptz not null default now()
 );
 
+-- Ficha de cada juego (resumen, géneros, compañías, capturas…), pedida
+-- a IGDB bajo demanda al abrirla en la app
+create table public.game_details (
+  igdb_game_id bigint primary key
+                 references public.games_cache(igdb_game_id)
+                 on delete cascade,
+  data         jsonb not null,
+  fetched_at   timestamptz not null default now()
+);
+
 -- Token de Twitch/IGDB: una única fila (id siempre = 1)
 create table public.igdb_token (
   id           integer primary key default 1,
@@ -95,4 +105,5 @@ create policy "delete_propios" on public.tracked_games
 alter table public.games_cache   enable row level security;
 alter table public.release_dates enable row level security;
 alter table public.cache_meta    enable row level security;
+alter table public.game_details  enable row level security;
 alter table public.igdb_token    enable row level security;

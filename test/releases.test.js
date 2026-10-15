@@ -7,7 +7,7 @@ import vm from 'node:vm';
 // lo ejecutamos en un contexto aislado y recogemos sus funciones.
 const ctx = {};
 vm.runInNewContext(readFileSync(new URL('../releases.js', import.meta.url), 'utf8'), ctx);
-const { expandReleases, listGroups } = ctx;
+const { expandReleases, listGroups, sortReleases } = ctx;
 
 const rel = (date, { regions = [], platforms = ['PS5'], precise = date != null, human } = {}) =>
   ({ date, human: human ?? date ?? 'Q4 2026', precise, platforms, regions });
@@ -140,4 +140,16 @@ test('listGroups: misma fecha -> orden alfabético', () => {
     { 1: 'interesado', 2: 'interesado' }
   );
   assert.deepEqual(out.released, [[2, '2026-05-01'], [1, '2026-05-01']]);
+});
+
+// --- sortReleases (ficha) ---
+
+test('sortReleases: exactas por fecha y después las aproximadas', () => {
+  const out = sortReleases([
+    rel(null, { human: 'TBD' }),
+    rel('2026-12-01'),
+    rel('2026-12-31', { precise: false, human: 'Q4 2026' }),
+    rel('2026-10-20'),
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(out.map((r) => r.human))), ['2026-10-20', '2026-12-01', 'Q4 2026', 'TBD']);
 });

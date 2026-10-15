@@ -15,6 +15,7 @@ datos y autenticación.
 ```
 navegador ──► /api/calendar?month=YYYY-MM ──► Supabase (caché) ──► IGDB
     │    ──► /api/games?ids=1,2,3 ─────────► Supabase (caché)
+    │    ──► /api/game?id=123 ─────────────► Supabase (caché) ──► IGDB
     │                (Vercel)
     └──► Supabase (tracked_games, con RLS)
 ```
@@ -26,6 +27,10 @@ navegador ──► /api/calendar?month=YYYY-MM ──► Supabase (caché) ─�
 - **`/api/games`** devuelve juegos concretos con todas sus fechas en caché,
   para Mi lista. Solo lee la caché (no llama a IGDB); un juego que ya no esté
   en ella se muestra con el nombre y la carátula guardados en `tracked_games`.
+- **`/api/game`** devuelve la ficha de un juego (resumen, géneros, compañías,
+  capturas, tráiler), que se abre al pulsar una tarjeta o una fila. Se pide a
+  IGDB bajo demanda y se guarda 7 días en `game_details`. Solo atiende juegos
+  que ya están en la caché del calendario.
 - **El navegador** filtra (descartados, "solo míos"), agrupa Mi lista y
   guarda tus estados directamente en Supabase con la *anon key*; el RLS hace
   que cada usuario solo vea y toque sus filas.
@@ -38,10 +43,11 @@ navegador ──► /api/calendar?month=YYYY-MM ──► Supabase (caché) ─�
 | Archivo | Qué hace |
 | --- | --- |
 | `index.html`, `styles.css`, `app.js` | Interfaz (sin build ni framework) |
-| `releases.js` | Fecha principal y grupos de Mi lista (funciones puras) |
+| `releases.js` | Fecha principal, grupos de Mi lista y orden de fechas de la ficha (funciones puras) |
 | `config.js` | URL y *anon key* públicas de Supabase |
 | `api/calendar.js` | Endpoint del calendario de un mes |
 | `api/games.js` | Endpoint de juegos por id (Mi lista) |
+| `api/game.js` | Endpoint de la ficha de un juego |
 | `lib/igdb.js` | Descarga de IGDB y caché en Supabase |
 | `lib/transform.js` | Transformaciones de datos (funciones puras) |
 | `lib/igdbToken.js` | Token de Twitch, guardado en Supabase |

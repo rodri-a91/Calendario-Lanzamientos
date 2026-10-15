@@ -68,3 +68,12 @@ function listGroups(games, statusOf, today) {
   }
   return groups;
 }
+
+// Fechas de un juego para su ficha: primero las exactas, de la más
+// temprana a la más tardía; después las aproximadas ("Q4 2026", "TBD").
+function sortReleases(releases) {
+  const byDate = (a, b) => (a.date ?? '9999').localeCompare(b.date ?? '9999');
+  const exact = releases.filter((r) => r.precise && r.date).sort(byDate);
+  const approx = releases.filter((r) => !(r.precise && r.date)).sort(byDate);
+  return [...exact, ...approx];
+}

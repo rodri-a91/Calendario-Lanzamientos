@@ -25,6 +25,19 @@ const ICONS = {
 const HOT_THRESHOLD = 30;
 const FLAME = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 12c2 -2.96 0 -7 -1 -8c0 3.038 -1.773 4.741 -3 6c-1.226 1.26 -2 3.24 -2 5a6 6 0 1 0 12 0c0 -1.532 -1.056 -3.94 -2 -5c-1.786 3 -2.791 3 -4 2z"/></svg>';
 
+// Regiones de IGDB (release_region) para las fechas de la ficha
+const REGIONES = { 1: 'Europa', 2: 'Norteamérica', 3: 'Australia', 4: 'Nueva Zelanda', 5: 'Japón',
+  6: 'China', 7: 'Asia', 8: 'Mundial', 9: 'Corea', 10: 'Brasil' };
+// Géneros y modos de IGDB (vienen en inglés); lo que no esté aquí sale tal cual
+const TRADUCCIONES = {
+  Fighting: 'Lucha', Shooter: 'Disparos', Music: 'Música', Platform: 'Plataformas', Puzzle: 'Puzles',
+  Racing: 'Conducción', 'Real Time Strategy (RTS)': 'Estrategia en tiempo real', 'Role-playing (RPG)': 'Rol',
+  Simulator: 'Simulación', Sport: 'Deportes', Strategy: 'Estrategia', 'Turn-based strategy (TBS)': 'Estrategia por turnos',
+  Tactical: 'Táctica', 'Quiz/Trivia': 'Preguntas', Adventure: 'Aventura', 'Visual Novel': 'Novela visual',
+  'Card & Board Game': 'Cartas y tablero', 'Single player': 'Un jugador', Multiplayer: 'Multijugador',
+  'Co-operative': 'Cooperativo', 'Split screen': 'Pantalla dividida', 'Massively Multiplayer Online (MMO)': 'MMO',
+};
+
 // Familia de plataforma -> clase de color para el chip
 function platClass(name) {
   if (name.startsWith('PS')) return 'plat-ps';
@@ -49,6 +62,8 @@ let loadedMonth = null;        // mes que hay en gamesById
 let undoTimer = null;
 let loadSeq = 0;               // descarta respuestas de meses que ya no se muestran
 let trackedLoaded = false;     // tus estados se cargan una vez por sesión, no por mes
+let detailsById = new Map();   // igdbId -> ficha de /api/game (resumen, géneros…)
+let sheetId = null;            // juego cuya ficha está abierta
 
 // Rango de meses que acepta la API (ver MAX_YEARS_AWAY en api/calendar.js)
 const YEARS_AWAY = 3;
@@ -102,6 +117,8 @@ db.auth.onAuthStateChange((event, session) => {
     listFetched = new Set();
     loadedMonth = null;
     trackedLoaded = false;
+    detailsById = new Map();
+    closeSheet();
     show('login');
   }
 });
@@ -293,6 +310,7 @@ function render() {
   if (focusKey) {
     content.querySelector(`button[data-id="${focusKey.id}"][data-action="${focusKey.action}"]`)?.focus();
   }
+  if (sheetId != null) renderSheet();
 }
 
 function renderAgenda(games) {
@@ -329,13 +347,9 @@ function renderAgenda(games) {
 function cardHTML(game, platforms, humanLabel) {
   const s = statusOf(game.igdbId);
   // Todo lo que viene de IGDB se escapa: es una fuente externa editable.
-  const coverInner = game.coverImageId
+  const cover = game.coverImageId
     ? `<img class="cover" loading="lazy" src="https://images.igdb.com/igdb/image/upload/t_cover_big/${encodeURIComponent(game.coverImageId)}.jpg" alt="">`
     : `<div class="cover placeholder">sin carátula</div>`;
-  const url = safeUrl(game.url);
-  const cover = url
-    ? `<a class="cover-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="Ver ficha en IGDB">${coverInner}</a>`
-    : coverInner;
 
   const plats = chipsHTML(platforms ?? game.releases[0]?.platforms);
 
@@ -345,9 +359,9 @@ function cardHTML(game, platforms, humanLabel) {
   const cardClass = (s && ESTADOS_POSITIVOS.includes(s) ? ` s-${s}` : '') + (hot ? ' hot' : '');
 
   return `
-    <div class="card${cardClass}">
+    <div class="card${cardClass}" data-game="${game.igdbId}">
       ${cover}
-      <div class="name">${escapeHtml(game.name)}</div>
+      <div class="name">${openButton(game)}</div>
       <div class="platforms">${plats}</div>
       ${label}
       ${hypeBadge}
@@ -355,21 +369,29 @@ function cardHTML(game, platforms, humanLabel) {
     </div>`;
 }
 
+// El nombre abre la ficha: es un botón para poder llegar con el teclado
+// (con el ratón o el dedo vale pulsar en cualquier parte de la tarjeta).
+function openButton(game) {
+  return `<button type="button" class="open-sheet" data-open="${game.igdbId}">${escapeHtml(game.name)}</button>`;
+}
+
 function chipsHTML(platforms) {
   return (platforms ?? [])
     .map((p) => `<span class="chip ${platClass(p)}">${escapeHtml(p)}</span>`).join('');
 }
 
-// Botones de estado de un juego (tarjeta del calendario y fila de Mi lista).
-// Los estados son interruptores (aria-pressed); descartar es una acción.
-function statusButtons(game) {
+// Botones de estado de un juego (tarjeta, fila de Mi lista y ficha; en la
+// ficha hay sitio para el texto). Los estados son interruptores
+// (aria-pressed); descartar es una acción.
+function statusButtons(game, withText = false) {
   const s = statusOf(game.igdbId);
   const btn = (action, on, extra = '') => {
     const pressed = action === 'descartado' ? '' : ` aria-pressed="${on}"`;
-    return `<button data-id="${game.igdbId}" data-action="${action}"${pressed} aria-label="${LABELS[action]}" title="${LABELS[action]}" class="${on ? 'on-' + action : ''} ${extra}">${ICONS[action]}</button>`;
+    const text = withText ? `<span>${LABELS[action]}</span>` : '';
+    return `<button data-id="${game.igdbId}" data-action="${action}"${pressed} aria-label="${LABELS[action]}" title="${LABELS[action]}" class="${on ? 'on-' + action : ''} ${extra}">${ICONS[action]}${text}</button>`;
   };
   return `
-      <div class="actions">
+      <div class="actions${withText ? ' with-text' : ''}">
         ${btn('interesado', s === 'interesado')}
         ${btn('reservado', s === 'reservado')}
         ${btn('comprado', s === 'comprado')}
@@ -408,20 +430,16 @@ function listRowHTML({ game, dateISO, label, platforms }) {
   const cover = game.coverImageId
     ? `<img class="row-cover" loading="lazy" src="https://images.igdb.com/igdb/image/upload/t_cover_small/${encodeURIComponent(game.coverImageId)}.jpg" alt="">`
     : '<div class="row-cover placeholder"></div>';
-  const url = safeUrl(game.url);
-  const name = url
-    ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(game.name)}</a>`
-    : escapeHtml(game.name);
   let when = escapeHtml(label ?? 'Sin fecha');
   if (dateISO) {
     const d = new Date(dateISO + 'T00:00:00');
     when = `${d.getDate()} ${MESES[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`;
   }
   return `
-    <div class="row s-${s}">
+    <div class="row s-${s}" data-game="${game.igdbId}">
       ${cover}
       <div class="row-main">
-        <div class="name">${name}</div>
+        <div class="name">${openButton(game)}</div>
         <div class="row-meta"><span class="when">${when}</span>${chipsHTML(platforms)}</div>
       </div>
       ${statusButtons(game)}
@@ -509,8 +527,15 @@ document.getElementById('content').addEventListener('click', async (e) => {
   }
 
   const btn = e.target.closest('button[data-action]');
-  if (!btn) return;
+  if (btn) { handleStatusClick(btn); return; }
 
+  // Cualquier otro punto de una tarjeta o fila -> su ficha
+  const item = e.target.closest('[data-game]');
+  if (item) openSheet(Number(item.dataset.game));
+});
+
+// Botón de estado (en la tarjeta, en la fila de Mi lista o en la ficha)
+async function handleStatusClick(btn) {
   const igdbId = Number(btn.dataset.id);
   const action = btn.dataset.action;
   const game = findGame(igdbId);
@@ -519,6 +544,7 @@ document.getElementById('content').addEventListener('click', async (e) => {
   const prev = statusOf(igdbId);
 
   if (action === 'descartado') {
+    if (sheetId === igdbId) closeSheet(); // descartado: la ficha ya no pinta nada
     const ok = await changeStatus(game, 'descartado');
     // Deshacer devuelve el juego al estado que tenía (p. ej. 'reservado'),
     // no solo lo "des-descarta".
@@ -527,7 +553,146 @@ document.getElementById('content').addEventListener('click', async (e) => {
     // Clic en el estado ya activo => lo quito
     await changeStatus(game, prev === action ? null : action);
   }
+}
+
+// ============================================================
+//  FICHA DEL JUEGO (ventana flotante)
+// ============================================================
+
+const sheet = document.getElementById('game-sheet');
+
+// Abre la ficha al instante con lo que ya tenemos y la completa después:
+// los detalles (/api/game) y, si venimos del calendario, todas las
+// fechas del juego (/api/games), no solo las de este mes.
+function openSheet(igdbId) {
+  if (!findGame(igdbId)) return;
+  sheetId = igdbId;
+  renderSheet();
+  if (!sheet.open) {
+    sheet.showModal();
+    document.documentElement.classList.add('sheet-open'); // sin scroll de fondo (iOS)
+  }
+  sheet.scrollTop = 0;
+
+  if (!detailsById.has(igdbId)) {
+    fetchDetails(igdbId)
+      .then((d) => detailsById.set(igdbId, d))
+      .catch((err) => { console.error(err); detailsById.set(igdbId, { error: true }); })
+      .finally(() => { if (sheetId === igdbId) renderSheet(); });
+  }
+  if (!listFetched.has(igdbId)) {
+    listFetched.add(igdbId);
+    fetchGames([igdbId])
+      .then(([g]) => {
+        if (!g) return;
+        listGamesById.set(igdbId, g);
+        if (sheetId === igdbId) renderSheet();
+      })
+      .catch((err) => { console.error(err); listFetched.delete(igdbId); });
+  }
+}
+
+async function fetchDetails(igdbId) {
+  const res = await fetch(`/api/game?id=${igdbId}`);
+  if (!res.ok) throw new Error('API ' + res.status);
+  return res.json();
+}
+
+function closeSheet() {
+  if (sheet.open) sheet.close(); // el evento "close" hace la limpieza
+}
+
+sheet.addEventListener('close', () => {
+  sheetId = null;
+  document.documentElement.classList.remove('sheet-open');
 });
+
+sheet.addEventListener('click', (e) => {
+  // Fondo (el propio <dialog>, fuera de su contenido) o la ✕
+  if (e.target === sheet || e.target.closest('#sheet-close')) { closeSheet(); return; }
+  const btn = e.target.closest('button[data-action]');
+  if (btn) handleStatusClick(btn);
+});
+
+function renderSheet() {
+  const game = findGame(sheetId);
+  if (!game) { closeSheet(); return; }
+  // Repintar destruye los botones: devolvemos el foco al mismo
+  const focused = document.activeElement?.closest?.('#sheet-body button[data-action]');
+  const body = document.getElementById('sheet-body');
+  body.innerHTML = sheetHTML(game, detailsById.get(sheetId));
+  if (focused) body.querySelector(`button[data-action="${focused.dataset.action}"]`)?.focus();
+}
+
+function sheetHTML(game, details) {
+  const s = statusOf(game.igdbId);
+  const img = (size, id) => `https://images.igdb.com/igdb/image/upload/${size}/${encodeURIComponent(id)}.jpg`;
+  const ok = details && !details.error;
+
+  // Cabecera: lo que ya sabemos sin esperar a la red
+  const cover = game.coverImageId
+    ? `<img class="sheet-cover" src="${img('t_cover_big', game.coverImageId)}" alt="">`
+    : '<div class="sheet-cover placeholder">sin carátula</div>';
+  const hot = game.hypes >= HOT_THRESHOLD;
+  const meta = [`<span class="hype-badge${hot ? ' hot' : ''}">${FLAME} ${game.hypes}</span>`];
+  if (ok && details.rating != null) meta.push(`<span class="rating" title="Nota en IGDB">${details.rating}/100</span>`);
+  if (ESTADOS_POSITIVOS.includes(s)) meta.push(`<span class="status-tag s-${s}">${LABELS[s]}</span>`);
+  const companies = ok ? [...details.developers, ...details.publishers].map(escapeHtml).join(' · ') : '';
+
+  let html = `
+    <div class="sheet-head">
+      ${cover}
+      <div class="sheet-title-box">
+        <h2 id="sheet-title">${escapeHtml(game.name)}</h2>
+        ${companies ? `<div class="companies">${companies}</div>` : ''}
+        <div class="sheet-meta">${meta.join('')}</div>
+      </div>
+    </div>
+    ${statusButtons(game, true)}`;
+
+  // Todas las fechas conocidas, con sus plataformas y regiones
+  const releases = sortReleases(game.releases);
+  if (releases.length) {
+    html += '<h3>Lanzamiento</h3><ul class="sheet-dates">';
+    for (const r of releases) {
+      let when = escapeHtml(r.human ?? 'Sin fecha');
+      if (r.precise && r.date) {
+        const d = new Date(r.date + 'T00:00:00');
+        when = `${d.getDate()} ${MESES[d.getMonth()]} ${d.getFullYear()}`;
+      }
+      const regions = (r.regions ?? []).map((id) => escapeHtml(REGIONES[id] ?? `región ${id}`)).join(', ');
+      html += `<li><span class="when">${when}</span>${chipsHTML(r.platforms)}${regions ? `<span class="regions">${regions}</span>` : ''}</li>`;
+    }
+    html += '</ul>';
+  }
+
+  // Lo que llega de /api/game
+  if (!details) {
+    html += '<p class="sheet-note">Cargando detalles…</p>';
+  } else if (details.error) {
+    html += '<p class="sheet-note">No se pudieron cargar más datos de este juego.</p>';
+  } else {
+    const tags = [...details.genres, ...details.modes];
+    if (tags.length) {
+      html += `<div class="sheet-tags">${tags.map((t) => `<span class="chip">${escapeHtml(TRADUCCIONES[t] ?? t)}</span>`).join('')}</div>`;
+    }
+    if (details.summary) html += `<p class="sheet-summary">${escapeHtml(details.summary)}</p>`;
+    if (details.screenshots.length) {
+      html += '<div class="shots">' + details.screenshots.map((id) =>
+        `<a href="${img('t_1080p', id)}" target="_blank" rel="noopener noreferrer"><img loading="lazy" src="${img('t_screenshot_med', id)}" alt="Captura de ${escapeHtml(game.name)}"></a>`
+      ).join('') + '</div>';
+    }
+  }
+
+  const links = [];
+  if (ok && details.trailer) {
+    links.push(`<a href="https://www.youtube.com/watch?v=${encodeURIComponent(details.trailer)}" target="_blank" rel="noopener noreferrer">Ver tráiler</a>`);
+  }
+  const url = safeUrl(game.url);
+  if (url) links.push(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Ver en IGDB</a>`);
+  if (links.length) html += `<div class="sheet-links">${links.join('')}</div>`;
+  return html;
+}
 
 // Cambia el estado de un juego (null = sin estado). Es optimista de verdad:
 // pinta al instante y guarda después. Si el guardado falla, vuelve atrás
